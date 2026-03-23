@@ -1,6 +1,7 @@
-# Type4Me
+![Xnip2026-03-23_12-09-19](https://github.com/user-attachments/assets/416e2ac4-df21-4d28-983f-b97f87942a97)# Type4Me
 
-> macOS 菜单栏语音输入工具，按下快捷键说话，松开即输入。
+> ma![Uploading type4me_logo.png…]()
+cOS 菜单栏语音输入工具，按下快捷键说话，松开即输入。
 
 ## 为什么做 Type4Me
 市面上语音输入法，至少命中以下问题之一：贵（$12/月）、封闭（不可导出记录）、功能单一（不能自定义Prompt）
