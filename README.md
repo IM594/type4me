@@ -1,6 +1,8 @@
 
 MacOS 语音输入工具，按下快捷键说话，松开即输入。
 
+**[下载 Type4Me v1.0.0](https://github.com/joewongjc/type4me/releases/download/v1.0.0/Type4Me-v1.0.0.dmg)** (macOS 14+)
+
 ## 为什么做 Type4Me
 市面上语音输入法，至少命中以下问题之一：贵（$12/月）、封闭（不可导出记录）、功能单一（不能自定义Prompt）
 
