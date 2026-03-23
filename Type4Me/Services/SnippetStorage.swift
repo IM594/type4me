@@ -42,26 +42,29 @@ enum SnippetStorage {
         return result
     }
 
-    /// Splits trigger into character clusters and joins with `\s*` so spaces are optional.
+    /// Splits trigger into character clusters and joins with flexible whitespace matchers.
+    /// Words (whitespace-separated) are joined with `\s+`, and within each word, runs of
+    /// different scripts (CJK vs ASCII) are joined with `\s*`.
     private static func buildFlexPattern(_ trigger: String) -> String {
-        // Split into runs of same-script characters (e.g. "我的" "Gmail" "邮箱")
-        var clusters: [String] = []
-        var current = ""
-        var lastType: CharType?
-
-        for ch in trigger where !ch.isWhitespace {
-            let type = charType(ch)
-            if let last = lastType, last != type {
-                if !current.isEmpty { clusters.append(NSRegularExpression.escapedPattern(for: current)) }
-                current = String(ch)
-            } else {
-                current.append(ch)
+        let words = trigger.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let wordPatterns = words.map { word -> String in
+            var clusters: [String] = []
+            var current = ""
+            var lastType: CharType?
+            for ch in word {
+                let type = charType(ch)
+                if let last = lastType, last != type {
+                    if !current.isEmpty { clusters.append(NSRegularExpression.escapedPattern(for: current)) }
+                    current = String(ch)
+                } else {
+                    current.append(ch)
+                }
+                lastType = type
             }
-            lastType = type
+            if !current.isEmpty { clusters.append(NSRegularExpression.escapedPattern(for: current)) }
+            return clusters.joined(separator: "\\s*")
         }
-        if !current.isEmpty { clusters.append(NSRegularExpression.escapedPattern(for: current)) }
-
-        return clusters.joined(separator: "\\s*")
+        return wordPatterns.joined(separator: "\\s+")
     }
 
     private enum CharType { case cjk, ascii, other }
