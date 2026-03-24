@@ -65,7 +65,11 @@ actor DoubaoChatClient: LLMClient {
         }
 
         logger.info("LLM result: \(result.count) chars")
-        return result
+
+        let stripped = result
+            .replacingOccurrences(of: "<think>[\\s\\S]*?<\\/think>", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped
     }
 }
 
