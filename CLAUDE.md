@@ -17,10 +17,10 @@ The built binary is at `.build/release/Type4Me`. To package it as a `.app` bundl
 
 Multi-provider ASR support via `ASRProvider` enum + `ASRProviderConfig` protocol + `ASRProviderRegistry`.
 
-- `ASRProvider` enum: 12 cases (openai/azure/google/aws/deepgram/assemblyai/volcano/aliyun/tencent/baidu/iflytek/custom)
+- `ASRProvider` enum: 10 cases (openai/azure/google/aws/deepgram/volcano/aliyun/tencent/iflytek/custom)
 - Each provider has its own Config type (e.g., `VolcanoASRConfig`) defining `credentialFields` for dynamic UI rendering
 - `ASRProviderRegistry`: maps provider to config type + client factory; `isAvailable` indicates whether a client implementation exists
-- Currently only `volcano` has a non-nil `createClient`; others are coming soon
+- Currently `volcano` and `deepgram` have a non-nil `createClient`; others are coming soon
 
 ### Adding a New Provider
 

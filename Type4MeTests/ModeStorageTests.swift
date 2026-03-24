@@ -17,7 +17,7 @@ final class ModeStorageTests: XCTestCase {
         ]
         try storage.save(modes)
         let loaded = storage.load()
-        // dualChannel is auto-injected if missing
+        // built-in modes are auto-injected if missing
         XCTAssertTrue(loaded.contains { $0.name == "Custom" })
         XCTAssertTrue(loaded.contains { $0.id == ProcessingMode.direct.id })
     }
@@ -39,7 +39,7 @@ final class ModeStorageTests: XCTestCase {
                 isBuiltin: true
             ),
             ProcessingMode(
-                id: ProcessingMode.translate.id,
+                id: ProcessingMode.translateId,
                 name: "英文翻译",
                 prompt: "legacy",
                 isBuiltin: true,
@@ -65,9 +65,9 @@ final class ModeStorageTests: XCTestCase {
 
         let loaded = storage.load()
 
-        // direct is kept, dualChannel is auto-injected
+        // direct is kept, performance is auto-injected
         XCTAssertTrue(loaded.contains { $0.id == ProcessingMode.direct.id })
-        XCTAssertTrue(loaded.contains { $0.id == ProcessingMode.dualChannel.id })
+        XCTAssertTrue(loaded.contains { $0.id == ProcessingMode.performance.id })
         // smartDirect and translate were removed and not re-injected
         XCTAssertFalse(loaded.contains { $0.id == ProcessingMode.smartDirect.id })
         XCTAssertFalse(loaded.contains { $0.id == ProcessingMode.translate.id })
@@ -120,10 +120,8 @@ final class ModeStorageTests: XCTestCase {
         let loaded = storage.load()
         let direct = loaded.first { $0.id == ProcessingMode.direct.id }
 
-        // Old JSON has no hotkey fields - should decode gracefully
-        // Note: direct mode's static definition has hotkeyCode=61, but since
-        // it's isBuiltin=true, load() returns the static .direct which has hotkeyCode=61
-        XCTAssertEqual(direct?.hotkeyStyle, .hold)
+        // Old JSON has no hotkey fields - should decode gracefully to today's builtin default.
+        XCTAssertEqual(direct?.hotkeyStyle, ProcessingMode.direct.hotkeyStyle)
     }
 
     func testToggleStyleIsPersisted() throws {

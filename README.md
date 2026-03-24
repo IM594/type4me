@@ -12,7 +12,7 @@ MacOS语音输入工具，实时识别、大模型文本优化、全本地存储
 
 基于火山引擎（豆包）大模型 ASR，WebSocket 双向流式传输，200ms 音频分片，边说边出字。性能模式下还支持双通道识别，同步进行实时识别、结束后用完整录音优化结果。
 
-欢迎共建接入其他厂商的模型，我自己只做了火山的。
+欢迎共建接入其他厂商的模型，目前已经接入火山引擎和 Deepgram。
 /btw 豆包现在注册送70小时识别，够用很久。
 
 ### 自定义处理模式
@@ -83,8 +83,9 @@ Type4Me/
 ├── ASR/                    # ASR 引擎抽象层
 │   ├── ASRProvider.swift          # Provider 枚举 + 协议
 │   ├── ASRProviderRegistry.swift  # 注册表
-│   ├── Providers/                 # 各厂商配置（12 家）
+│   ├── Providers/                 # 各厂商配置（10 家）
 │   ├── VolcASRClient.swift        # 火山引擎流式 ASR
+│   ├── DeepgramASRClient.swift    # Deepgram 流式 ASR
 │   └── VolcFlashASRClient.swift   # 火山引擎 Flash ASR
 ├── Audio/                  # 音频采集
 ├── Session/                # 核心状态机：录音 → ASR → 注入
@@ -102,7 +103,7 @@ ASR Provider 架构设计为可插拔：每个云厂商实现 `ASRProviderConfig
 
 **这个项目需要你的帮助。**
 
-目前我个人只完成了**火山引擎（Volcengine）**的 ASR 适配和调试。项目架构已经预留了 12 家云厂商的接口定义（OpenAI Whisper、Google、AWS、Azure、阿里云、腾讯云、百度、讯飞等），但客户端实现还是空的。
+目前已经完成了 **火山引擎（Volcengine）** 和 **Deepgram** 的 ASR 适配。项目架构还预留了其他主流云厂商的接口定义（OpenAI Whisper、Google、AWS、Azure、阿里云、腾讯云、讯飞等），欢迎继续补齐客户端实现。
 
 如果你在用其他语音识别服务，欢迎提交 PR 补充实现。添加一个新 Provider 只需要三步：
 

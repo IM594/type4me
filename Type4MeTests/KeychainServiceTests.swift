@@ -31,19 +31,25 @@ final class KeychainServiceTests: XCTestCase {
     }
 
     func testLoadCredentials_fromKeychain() throws {
-        try KeychainService.save(key: "tf_appKey", value: "myAppKey")
-        try KeychainService.save(key: "tf_accessKey", value: "myAccessKey")
-        try KeychainService.save(key: "tf_resourceId", value: "myResource")
+        let original = KeychainService.loadASRCredentials(for: .volcano)
+        defer {
+            if let original {
+                try? KeychainService.saveASRCredentials(for: .volcano, values: original)
+            } else {
+                try? KeychainService.saveASRCredentials(for: .volcano, values: [:])
+            }
+        }
+
+        try KeychainService.saveASRCredentials(for: .volcano, values: [
+            "appKey": "myAppKey",
+            "accessKey": "myAccessKey",
+            "resourceId": "myResource",
+        ])
 
         let config = KeychainService.loadASRConfig()
         XCTAssertNotNil(config)
         XCTAssertEqual(config?.appKey, "myAppKey")
         XCTAssertEqual(config?.accessKey, "myAccessKey")
         XCTAssertEqual(config?.resourceId, "myResource")
-
-        // Cleanup
-        KeychainService.delete(key: "tf_appKey")
-        KeychainService.delete(key: "tf_accessKey")
-        KeychainService.delete(key: "tf_resourceId")
     }
 }

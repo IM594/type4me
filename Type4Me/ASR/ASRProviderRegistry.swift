@@ -15,6 +15,7 @@ enum ASRProviderRegistry {
         .azure:   ProviderEntry(configType: AzureASRConfig.self,   createClient: nil),
         .google:  ProviderEntry(configType: GoogleASRConfig.self,  createClient: nil),
         .aws:     ProviderEntry(configType: AWSASRConfig.self,     createClient: nil),
+        .deepgram: ProviderEntry(configType: DeepgramASRConfig.self, createClient: { DeepgramASRClient() }),
         .aliyun:  ProviderEntry(configType: AliyunASRConfig.self,  createClient: nil),
         .tencent: ProviderEntry(configType: TencentASRConfig.self, createClient: nil),
         .iflytek: ProviderEntry(configType: IflytekASRConfig.self, createClient: nil),
