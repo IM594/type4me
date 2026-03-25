@@ -11,6 +11,7 @@ struct HistoryRecord: Identifiable, Hashable {
     let processedText: String?
     let finalText: String
     let status: String
+    let characterCount: Int?
 }
 
 // MARK: - View
@@ -26,6 +27,7 @@ struct HistoryTab: View {
     @State private var isLoadingMore = false
     @State private var searchText = ""
     @State private var copiedId: String?
+    @State private var statistics: HistoryStore.Statistics?
 
     private static let pageSize = 20
 
@@ -86,6 +88,12 @@ struct HistoryTab: View {
                 title: L("识别历史", "History"),
                 description: L("浏览和管理语音识别记录。", "Browse and manage speech recognition records.")
             )
+
+            // Statistics Section
+            if let stats = statistics, stats.recordCount > 0 {
+                statisticsSection(stats: stats)
+                    .padding(.bottom, TF.spacingMD)
+            }
 
             // Search + Export
             HStack(spacing: 8) {
@@ -162,14 +170,23 @@ struct HistoryTab: View {
                 }
             }
         }
-        .task { await loadRecords() }
+        .task {
+            await loadRecords()
+            await loadStatistics()
+        }
         .onChange(of: isActive) { _, newValue in
             guard newValue else { return }
-            Task { await loadRecords() }
+            Task {
+                await loadRecords()
+                await loadStatistics()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .historyStoreDidChange)) { _ in
             guard isActive else { return }
-            Task { await loadRecords() }
+            Task {
+                await loadRecords()
+                await loadStatistics()
+            }
         }
     }
 
@@ -178,6 +195,13 @@ struct HistoryTab: View {
         await MainActor.run {
             records = fetched
             hasMore = fetched.count >= Self.pageSize
+        }
+    }
+
+    private func loadStatistics() async {
+        let stats = await historyStore.getStatistics()
+        await MainActor.run {
+            statistics = stats
         }
     }
 
@@ -353,6 +377,9 @@ struct HistoryTab: View {
                     : .dateTime.hour().minute()
                 Label(record.createdAt.formatted(timeFormat), systemImage: "clock")
                 Label(String(format: "%.1fs", record.durationSeconds), systemImage: "waveform")
+            if let chars = record.characterCount {
+                Label("\(chars) 字", systemImage: "doc.text")
+            }
                 if let mode = record.processingMode {
                     Label(mode, systemImage: "text.bubble")
                 }
@@ -419,5 +446,73 @@ struct HistoryTab: View {
         .background(
             RoundedRectangle(cornerRadius: 8).fill(TF.settingsBg)
         )
+    }
+
+    // MARK: - Statistics UI
+
+    private func statisticsSection(stats: HistoryStore.Statistics) -> some View {
+        HStack(spacing: TF.spacingMD) {
+            statCard(
+                icon: "clock.fill",
+                label: L("累计时长", "Total Time"),
+                value: formatDuration(stats.totalDuration),
+                color: TF.settingsAccentAmber
+            )
+
+            statCard(
+                icon: "doc.text",
+                label: L("累计字数", "Total Chars"),
+                value: formatNumber(stats.totalCharacters),
+                color: TF.settingsAccentGreen
+            )
+
+            statCard(
+                icon: "speedometer",
+                label: L("平均速度", "Avg Speed"),
+                value: String(format: L("%.0f 字/分", "%.0f ch/min"), stats.averageSpeed),
+                color: TF.settingsText
+            )
+        }
+    }
+
+    private func statCard(icon: String, label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                    .foregroundStyle(color)
+                Text(label)
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.settingsTextTertiary)
+            }
+            Text(value)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(TF.settingsText)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, TF.spacingSM)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: TF.cornerSM)
+                .fill(TF.settingsBg)
+        )
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        if hours > 0 {
+            return String(format: L("%d小时%d分", "%dh %dm"), hours, minutes)
+        } else {
+            return String(format: L("%d分钟", "%dm"), minutes)
+        }
+    }
+
+    private func formatNumber(_ number: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = AppLanguage.current == .zh ? Locale(identifier: "zh_CN") : Locale(identifier: "en_US")
+        return formatter.string(from: NSNumber(value: number)) ?? String(number)
     }
 }

@@ -2,6 +2,7 @@
 .build/
 AECTest/.build/
 dist/
+*.dmg
 
 # IDE / Editor
 .swiftpm/
@@ -9,6 +10,7 @@ dist/
 *.xcworkspace/
 xcuserdata/
 .vscode/
+.claude/
 
 # macOS
 .DS_Store

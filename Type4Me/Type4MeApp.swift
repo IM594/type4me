@@ -47,6 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[Type4Me] applicationDidFinishLaunching")
         KeychainService.migrateIfNeeded()
         HotwordStorage.seedIfNeeded()
+
+        // 历史记录字数迁移（异步执行，不阻塞启动）
+        Task {
+            await HistoryStore().migrateCharacterCounts()
+        }
+
         DebugFileLogger.startSession()
         DebugFileLogger.log("applicationDidFinishLaunching")
         floatingBarController = FloatingBarController(state: appState)

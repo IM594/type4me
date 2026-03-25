@@ -20,25 +20,28 @@ final class HistoryStoreTests: XCTestCase {
         let record = HistoryRecord(
             id: UUID().uuidString, createdAt: Date(), durationSeconds: 3.5,
             rawText: "测试文本", processingMode: nil, processedText: nil,
-            finalText: "测试文本", status: "completed"
+            finalText: "测试文本", status: "completed", characterCount: 4
         )
         await store.insert(record)
         let all = await store.fetchAll()
         XCTAssertEqual(all.count, 1)
         XCTAssertEqual(all.first?.rawText, "测试文本")
         XCTAssertEqual(all.first?.durationSeconds ?? 0, 3.5, accuracy: 0.01)
+        XCTAssertEqual(all.first?.characterCount, 4)
     }
 
     func testInsertWithProcessedText() async {
         let record = HistoryRecord(
             id: UUID().uuidString, createdAt: Date(), durationSeconds: 2.0,
             rawText: "原始文本", processingMode: "润色",
-            processedText: "润色后的文本", finalText: "润色后的文本", status: "completed"
+            processedText: "润色后的文本", finalText: "润色后的文本", status: "completed",
+            characterCount: 6
         )
         await store.insert(record)
         let all = await store.fetchAll()
         XCTAssertEqual(all.first?.processingMode, "润色")
         XCTAssertEqual(all.first?.processedText, "润色后的文本")
+        XCTAssertEqual(all.first?.characterCount, 6)
     }
 
     func testDelete() async {
@@ -46,7 +49,7 @@ final class HistoryStoreTests: XCTestCase {
         let record = HistoryRecord(
             id: id, createdAt: Date(), durationSeconds: 1.0,
             rawText: "to delete", processingMode: nil, processedText: nil,
-            finalText: "to delete", status: "completed"
+            finalText: "to delete", status: "completed", characterCount: 9
         )
         await store.insert(record)
         await store.delete(id: id)
@@ -58,12 +61,12 @@ final class HistoryStoreTests: XCTestCase {
         let old = HistoryRecord(
             id: "1", createdAt: Date(timeIntervalSinceNow: -100), durationSeconds: 1,
             rawText: "old", processingMode: nil, processedText: nil,
-            finalText: "old", status: "completed"
+            finalText: "old", status: "completed", characterCount: 3
         )
         let recent = HistoryRecord(
             id: "2", createdAt: Date(), durationSeconds: 1,
             rawText: "recent", processingMode: nil, processedText: nil,
-            finalText: "recent", status: "completed"
+            finalText: "recent", status: "completed", characterCount: 6
         )
         await store.insert(old)
         await store.insert(recent)
@@ -77,7 +80,7 @@ final class HistoryStoreTests: XCTestCase {
             await store.insert(HistoryRecord(
                 id: "\(i)", createdAt: Date(), durationSeconds: 1,
                 rawText: "text\(i)", processingMode: nil, processedText: nil,
-                finalText: "text\(i)", status: "completed"
+                finalText: "text\(i)", status: "completed", characterCount: 5 + i
             ))
         }
         await store.deleteAll()
@@ -90,7 +93,7 @@ final class HistoryStoreTests: XCTestCase {
         let record = HistoryRecord(
             id: UUID().uuidString, createdAt: Date(), durationSeconds: 1.2,
             rawText: "notify", processingMode: "智能模式", processedText: "notify",
-            finalText: "notify", status: "completed"
+            finalText: "notify", status: "completed", characterCount: 6
         )
 
         await store.insert(record)

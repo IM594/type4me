@@ -492,7 +492,8 @@ actor RecognitionSession {
                 processingMode: currentMode == .direct ? nil : currentMode.name,
                 processedText: processedText,
                 finalText: finalText,
-                status: "completed"
+                status: "completed",
+                characterCount: finalText.count
             ))
 
         } else {
