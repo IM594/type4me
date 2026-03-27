@@ -6,21 +6,21 @@ import ApplicationServices
 // MARK: - Shared Types
 
 enum SettingsTestStatus: Equatable {
-    case idle, testing, success, failed(String)
+    case idle, testing, saved, success, failed(String)
 
     var buttonForeground: Color {
         switch self {
-        case .idle, .testing: return TF.settingsText
-        case .success:        return TF.settingsAccentGreen
-        case .failed:         return TF.settingsAccentRed
+        case .idle, .testing:  return TF.settingsText
+        case .saved, .success: return TF.settingsAccentGreen
+        case .failed:          return TF.settingsAccentRed
         }
     }
 
     var buttonBackground: Color {
         switch self {
-        case .idle, .testing: return TF.settingsCardAlt
-        case .success:        return TF.settingsAccentGreen.opacity(0.12)
-        case .failed:         return TF.settingsAccentRed.opacity(0.12)
+        case .idle, .testing:  return TF.settingsCardAlt
+        case .saved, .success: return TF.settingsAccentGreen.opacity(0.12)
+        case .failed:          return TF.settingsAccentRed.opacity(0.12)
         }
     }
 }
@@ -249,10 +249,14 @@ extension SettingsCardHelpers {
                         .scaleEffect(0.5)
                         .frame(width: 12, height: 12)
                     Text(title)
+                case .saved:
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                    Text(L("已保存", "Saved"))
                 case .success:
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
-                    Text(L("成功", "OK"))
+                    Text(L("连接成功", "Connected"))
                 case .failed(let msg):
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12))
@@ -745,7 +749,7 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
             editedFields = []
             hasStoredASR = true
             isEditingASR = false
-            asrTestStatus = .success
+            asrTestStatus = .saved
         } catch {
             asrTestStatus = .failed(L("保存失败", "Save failed"))
         }
@@ -996,7 +1000,7 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
             editedFields = []
             hasStoredLLM = true
             isEditingLLM = false
-            llmTestStatus = .success
+            llmTestStatus = .saved
         } catch {
             llmTestStatus = .failed(L("保存失败", "Save failed"))
         }
