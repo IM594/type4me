@@ -1,6 +1,11 @@
 {
-  "latest": "1.3.5",
+  "latest": "1.3.6",
   "releases": [
+    {
+      "version": "1.3.6",
+      "date": "2026-03-28",
+      "notes": "- 更新默认书面结构化 Prompt，新增 Few-shot 示例，口语整理效果更自然 (contributed by @jimmyzhuu)\n- 更新默认英文翻译 Prompt，优先翻译用户意图而非逐字直译 (contributed by @jimmyzhuu)\n- 旧版默认 Prompt 自动迁移到新版，自定义 Prompt 不受影响"
+    },
     {
       "version": "1.3.5",
       "date": "2026-03-28",
