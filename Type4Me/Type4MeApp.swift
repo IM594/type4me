@@ -265,8 +265,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ESC abort: skip injection but let recognition/clipboard/history proceed.
         hotkeyManager.onESCAbort = { [weak self] in
             guard let self else { return }
-            NSLog("[Type4Me] >>> HOTKEY: ESC abort injection")
-            DebugFileLogger.log("hotkey ESC abort injection")
+            let phase = appState.barPhase
+            guard phase == .recording || phase == .processing || phase == .preparing else {
+                return  // Not in an active session, ignore ESC
+            }
+            NSLog("[Type4Me] >>> HOTKEY: ESC abort injection (phase=%@)", String(describing: phase))
+            DebugFileLogger.log("hotkey ESC abort injection phase=\(phase)")
             SoundFeedback.playStop()
             Task {
                 await self.session.abortInjection()
