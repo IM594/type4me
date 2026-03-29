@@ -4,6 +4,7 @@ import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general
+    case models
     case vocabulary
     case modes
     case history
@@ -14,6 +15,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .general:     return L("通用", "General")
+        case .models:      return L("模型", "Models")
         case .vocabulary:  return L("词汇", "Vocabulary")
         case .modes:       return L("模式", "Modes")
         case .history:     return L("历史", "History")
@@ -23,7 +25,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .general:    return L("快捷键与接口配置", "Hotkeys & API config")
+        case .general:    return L("偏好与系统权限", "Preferences & permissions")
+        case .models:      return L("语音识别与 LLM 引擎", "ASR & LLM engines")
         case .vocabulary:  return L("热词与片段替换", "Hotwords & snippets")
         case .modes:       return L("推理与默认行为", "Processing & defaults")
         case .history:     return L("会话与日志保留", "Sessions & logs")
@@ -132,6 +135,7 @@ struct SettingsView: View {
     private var content: some View {
         ZStack {
             tabPage(.general)    { GeneralSettingsTab() }
+            tabPage(.models)     { ModelSettingsTab() }
             tabPage(.vocabulary) { VocabularyTab() }
             tabPage(.modes)      { ModesSettingsTab() }
             fixedPage(.history)  { HistoryTab(isActive: selectedTab == .history) }

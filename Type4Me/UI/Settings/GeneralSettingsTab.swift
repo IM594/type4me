@@ -32,50 +32,64 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
             SettingsSectionHeader(
                 label: "GENERAL",
                 title: L("通用设置", "General Settings"),
-                description: L("接口配置与偏好设置。快捷键请在「处理模式」中配置。", "API configuration and preferences. Hotkeys are configured in Modes.")
+                description: L("偏好设置与系统权限。快捷键请在「处理模式」中配置。", "Preferences and permissions. Hotkeys are configured in Modes.")
             )
 
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            // MODULE 1: 全局设置 (全宽卡片，内部双列)
+            // CARD 1: 录音行为
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-            settingsGroupCard(L("偏好", "Global Preferences"), icon: "slider.horizontal.3") {
-                // Row 1: 三等分 - 提示音 / 录音动效 / 界面语言
+            settingsGroupCard(L("录音行为", "Recording Behavior"), icon: "waveform") {
+                // Row 1: 提示音 / 录音动效
                 HStack(alignment: .top, spacing: 16) {
                     startSoundRow
                         .frame(maxWidth: .infinity)
                     visualStyleRow
                         .frame(maxWidth: .infinity)
-                    languageRow
-                        .frame(maxWidth: .infinity)
                 }
 
                 SettingsDivider()
 
-                // Row 2: 三等分 - 开机启动 / 降低音量 / ESC打断
+                // Row 2: 降低音量 / ESC打断
                 HStack(alignment: .top, spacing: 16) {
-                    launchAtLoginRow
-                        .frame(maxWidth: .infinity)
                     volumeReductionRow
                         .frame(maxWidth: .infinity)
                     escAbortRow
                         .frame(maxWidth: .infinity)
                 }
+            }
 
-                SettingsDivider()
+            Spacer().frame(height: 16)
 
-                // Row 3: 三等分 - 保留剪贴板 / Dock图标 / (占位)
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // CARD 2: 系统集成
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+            settingsGroupCard(L("系统集成", "System Integration"), icon: "gearshape.2") {
+                // Row 1: 开机启动 / Dock图标
                 HStack(alignment: .top, spacing: 16) {
-                    preserveClipboardRow
+                    launchAtLoginRow
                         .frame(maxWidth: .infinity)
                     dockIconRow
                         .frame(maxWidth: .infinity)
-                    Color.clear
+                }
+
+                SettingsDivider()
+
+                // Row 2: 剪贴板 / 界面语言
+                HStack(alignment: .top, spacing: 16) {
+                    preserveClipboardRow
+                        .frame(maxWidth: .infinity)
+                    languageRow
                         .frame(maxWidth: .infinity)
                 }
             }
 
             Spacer().frame(height: 16)
+
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // CARD 3: 系统权限
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
             settingsGroupCard(
                 L("系统权限", "Permissions"),
@@ -116,18 +130,6 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
                     }
                 }
             }
-
-            Spacer().frame(height: 16)
-
-            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            // MODULE 2: API 设置 (上下结构)
-            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-            ASRSettingsCard()
-
-            Spacer().frame(height: 16)
-
-            LLMSettingsCard()
 
         }
         .task {
