@@ -5,7 +5,7 @@
 - **模型接入**：支持主流厂商API接入；文本处理支持使用Ollama接本地模型；
 - **词汇管理**：支持热词、映射词，2种模式。热词用于校正语音识别引擎，映射词可作为兜底或个性化场景使用（如 Web coding -> Vibe Coding, "我的邮箱地址" -> xxx@gmail.com）；
 - **历史记录**：存储所有历史识别记录，包括原始文本和处理后文本，支持导出CSV；
-- **配套Skill：精准提高识别准确率**，[点这里安装Skill](https://github.com/joewongjc/type4me-vocab-skill)后跟你的agent说"Qwen3.5 不要识别成 Queen 3.5"，他就能自动帮你管理热词和映射词，同类错误不再犯  
+- **配套Skill**：真正做到100%准确率，打造只属于你的输入法，[点这里安装Skill](https://github.com/joewongjc/type4me-vocab-skill)后跟你的agent说"Qwen3.5 不要识别成 Queen 3.5"，他就能自动帮你管理热词和映射词，同类错误不再犯  
 
 <img src="https://github.com/user-attachments/assets/9f692cdd-1b08-41d5-9381-386868a80a40" width="400" />
 
