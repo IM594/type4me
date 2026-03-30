@@ -6,8 +6,42 @@ struct UpdateInfo: Codable, Identifiable {
     let version: String
     let date: String
     let notes: String
+    let cloudDmgURL: String?
+    let cloudDmgSize: Int64?
+    let cloudDmgSHA256: String?
 
     var id: String { version }
+
+    enum CodingKeys: String, CodingKey {
+        case version, date, notes
+        case cloudDmgURL = "cloud_dmg_url"
+        case cloudDmgSize = "cloud_dmg_size"
+        case cloudDmgSHA256 = "cloud_dmg_sha256"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(String.self, forKey: .version)
+        date = try c.decode(String.self, forKey: .date)
+        notes = try c.decode(String.self, forKey: .notes)
+        cloudDmgURL = try c.decodeIfPresent(String.self, forKey: .cloudDmgURL)
+        cloudDmgSize = try c.decodeIfPresent(Int64.self, forKey: .cloudDmgSize)
+        cloudDmgSHA256 = try c.decodeIfPresent(String.self, forKey: .cloudDmgSHA256)
+    }
+
+    /// Resolved DMG download URL (explicit or fallback from version)
+    var resolvedDmgURL: URL {
+        if let urlStr = cloudDmgURL, let url = URL(string: urlStr) { return url }
+        return URL(string: "https://github.com/joewongjc/type4me/releases/download/v\(version)/Type4Me-v\(version)-cloud.dmg")!
+    }
+
+    /// Human-readable download size (e.g. "23.5 MB")
+    var formattedSize: String? {
+        guard let size = cloudDmgSize else { return nil }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: size)
+    }
 }
 
 struct UpdateManifest: Codable {

@@ -82,9 +82,12 @@ enum SnippetStorage {
         // ── Qwen ──
         ("Queen三",         "Qwen3"),
         ("Queen 三",        "Qwen3"),
+        ("Queen3",          "Qwen3"),
+        ("Queen 3",         "Qwen3"),
         ("qun三",           "Qwen3"),
         ("Qu3",             "Qwen3"),
         ("Queen三点五",     "Qwen3.5"),
+        ("Queen 3.5",       "Qwen3.5"),
         ("quin三点五",      "Qwen3.5"),
         ("qun三点五",       "Qwen3.5"),
         ("quin三点",        "Qwen3"),
@@ -235,6 +238,7 @@ enum SnippetStorage {
 
     static func save(_ snippets: [(trigger: String, value: String)]) {
         writeFile(snippets, to: userFileURL)
+        invalidateCache()
     }
 
     // MARK: - Built-in file (Finder editable)
@@ -245,6 +249,7 @@ enum SnippetStorage {
 
     static func saveBuiltin(_ snippets: [(trigger: String, value: String)]) {
         writeFile(snippets, to: builtinFileURL)
+        invalidateCache()
     }
 
     static func builtinCount() -> Int {
@@ -261,26 +266,49 @@ enum SnippetStorage {
         #endif
     }
 
-    // MARK: - Apply (merge both stores)
+    // MARK: - Compiled cache
 
-    /// Apply built-in + user snippets. User entries override built-in on trigger conflict.
-    static func applyEffective(to text: String) -> String {
+    private struct CompiledRule {
+        let regex: NSRegularExpression
+        let template: String  // pre-escaped replacement
+    }
+
+    /// Cached compiled rules. Rebuilt only when snippets change.
+    private static var cachedRules: [CompiledRule]?
+
+    /// Call after saving either file to force recompilation on next apply.
+    static func invalidateCache() {
+        cachedRules = nil
+    }
+
+    private static func compiledRules() -> [CompiledRule] {
+        if let cached = cachedRules { return cached }
         let builtinSnippets = loadBuiltin()
         let userSnippets = load()
         let userTriggers = Set(userSnippets.map { $0.trigger.lowercased() })
         let effectiveBuiltin = builtinSnippets.filter { !userTriggers.contains($0.trigger.lowercased()) }
         let allSnippets = effectiveBuiltin + userSnippets
 
-        var result = text
-        for snippet in allSnippets {
+        let rules = allSnippets.compactMap { snippet -> CompiledRule? in
             let pattern = buildFlexPattern(snippet.trigger)
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
-                result = regex.stringByReplacingMatches(
-                    in: result,
-                    range: NSRange(result.startIndex..., in: result),
-                    withTemplate: NSRegularExpression.escapedTemplate(for: snippet.value)
-                )
-            }
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            return CompiledRule(regex: regex, template: NSRegularExpression.escapedTemplate(for: snippet.value))
+        }
+        cachedRules = rules
+        return rules
+    }
+
+    // MARK: - Apply (merge both stores)
+
+    /// Apply built-in + user snippets. User entries override built-in on trigger conflict.
+    static func applyEffective(to text: String) -> String {
+        var result = text
+        for rule in compiledRules() {
+            result = rule.regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: rule.template
+            )
         }
         return result
     }
@@ -289,12 +317,13 @@ enum SnippetStorage {
 
     /// Builds a regex that matches the trigger case-insensitively and space-insensitively.
     /// Strips all whitespace from trigger, then inserts `\s*` between each character.
+    /// Uses ASCII-only word boundaries (not `\b`) so CJK/Latin boundaries work correctly.
     private static func buildFlexPattern(_ trigger: String) -> String {
         let chars = trigger.filter { !$0.isWhitespace }
         guard !chars.isEmpty else { return NSRegularExpression.escapedPattern(for: trigger) }
         let core = chars.map { NSRegularExpression.escapedPattern(for: String($0)) }
             .joined(separator: "\\s*")
-        return "\\b" + core + "\\b"
+        return "(?<![a-zA-Z0-9])" + core + "(?![a-zA-Z0-9])"
     }
 
     // MARK: - File I/O helpers

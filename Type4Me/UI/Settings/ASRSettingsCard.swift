@@ -30,6 +30,10 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
         ASRProviderRegistry.configType(for: selectedASRProvider)?.credentialFields ?? []
     }
 
+    private var isZeroCredentialProvider: Bool {
+        currentASRFields.isEmpty && !selectedASRProvider.isLocal
+    }
+
     /// Effective values: saved base + dirty edits overlaid (including clears).
     private var effectiveASRValues: [String: String] {
         var result = savedASRValues
@@ -105,7 +109,12 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
             if selectedASRProvider.isLocal {
                 localModelSection
             } else {
-                if hasASRCredentials && !isEditingASR {
+                if isZeroCredentialProvider {
+                    Text(L("此引擎无需 API 凭证，可直接测试和使用。", "This provider requires no API credentials and can be used directly."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(TF.settingsTextSecondary)
+                        .padding(.vertical, 8)
+                } else if hasASRCredentials && !isEditingASR {
                     credentialSummaryCard(rows: asrSummaryRows)
                 } else {
                     dynamicCredentialFields
@@ -115,7 +124,9 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                     Spacer()
                     testButton(L("测试连接", "Test"), status: asrTestStatus) { testASRConnection() }
                         .disabled(!hasASRCredentials || !isASRProviderAvailable)
-                    if hasASRCredentials && !isEditingASR {
+                    if isZeroCredentialProvider {
+                        EmptyView()
+                    } else if hasASRCredentials && !isEditingASR {
                         secondaryButton(L("修改", "Edit")) {
                             testTask?.cancel()
                             asrTestStatus = .idle
@@ -302,7 +313,12 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                     }
                     Spacer()
                     if svToggling {
-                        ProgressView().controlSize(.small)
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.small)
+                            Text(L("启动中", "Starting"))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(TF.settingsTextSecondary)
+                        }
                     } else if serverRunning {
                         HStack(spacing: 4) {
                             Image(systemName: "checkmark.circle.fill")
@@ -344,7 +360,12 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                         }
                         Spacer()
                         if qwen3Toggling {
-                            ProgressView().controlSize(.small)
+                            HStack(spacing: 4) {
+                                ProgressView().controlSize(.small)
+                                Text(L("启动中", "Starting"))
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(TF.settingsTextSecondary)
+                            }
                         } else if qwen3Running {
                             HStack(spacing: 4) {
                                 Image(systemName: "checkmark.circle.fill")

@@ -83,10 +83,27 @@ enum KeychainService {
     }
 
     static func loadASRConfig(for provider: ASRProvider) -> (any ASRProviderConfig)? {
-        guard let values = loadASRCredentials(for: provider),
-              let configType = ASRProviderRegistry.configType(for: provider)
-        else { return nil }
-        return configType.init(credentials: values)
+        guard let configType = ASRProviderRegistry.configType(for: provider) else {
+            return nil
+        }
+
+        if let values = loadASRCredentials(for: provider) {
+            return configType.init(credentials: values)
+        }
+
+        // Fallback: build config from default field values (e.g. Apple ASR needs no API key)
+        let defaultValues: [String: String] = Dictionary(
+            uniqueKeysWithValues: configType.credentialFields.compactMap { field in
+                guard !field.defaultValue.isEmpty else { return nil }
+                return (field.key, field.defaultValue)
+            }
+        )
+
+        if defaultValues.isEmpty && configType.credentialFields.isEmpty {
+            return configType.init(credentials: [:])
+        }
+
+        return configType.init(credentials: defaultValues)
     }
 
     /// Load config for the currently selected provider.

@@ -298,10 +298,11 @@ actor RecognitionSession {
         // ── Phase 3: Flush buffer → switch to live pipeline ──
 
         let events = await client.events
+        let expectedGeneration = sessionGeneration
         eventConsumptionTask = Task { [weak self] in
             for await event in events {
                 guard let self else { break }
-                await self.handleASREvent(event)
+                await self.handleASREvent(event, expectedGeneration: expectedGeneration)
                 if case .completed = event { break }
             }
         }
@@ -607,7 +608,11 @@ actor RecognitionSession {
 
     // MARK: - ASR Events
 
-    private func handleASREvent(_ event: RecognitionEvent) {
+    private func handleASREvent(_ event: RecognitionEvent, expectedGeneration: Int) {
+        guard expectedGeneration == sessionGeneration else {
+            DebugFileLogger.log("ignoring stale ASR event for gen=\(expectedGeneration), active=\(sessionGeneration)")
+            return
+        }
         switch event {
         case .ready:
             // Deduplicate: ASR clients may emit .ready, but we also emit it
@@ -658,7 +663,15 @@ actor RecognitionSession {
     private func sendAudioToASR(_ data: Data) async throws {
         guard let client = asrClient else { return }
         let t0 = ContinuousClock.now
-        try await client.sendAudio(data)
+        let provider = KeychainService.selectedASRProvider
+        let audioInput = ASRProviderRegistry.capabilities(for: provider).audioInput
+        switch audioInput {
+        case .pcmData:
+            try await client.sendAudio(data)
+        case .pcmBuffer:
+            guard let buffer = AudioCaptureEngine.makePCMBuffer(from: data) else { return }
+            try await client.sendAudioBuffer(buffer)
+        }
         let elapsed = ContinuousClock.now - t0
         chunkSendCount += 1
         // Log every 50 chunks (~10s) or if send took >200ms

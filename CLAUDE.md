@@ -2,14 +2,19 @@
 
 ## Overview
 
-macOS menu bar voice input tool with local + cloud ASR support and optional LLM post-processing.
-Local ASR via SherpaOnnx (Paraformer/Zipformer), cloud ASR via Volcengine & Deepgram (others coming soon).
-Swift Package Manager project, no Xcode project file. Depends on `sherpa-onnx.xcframework` (local binary).
+macOS menu bar voice input tool with dual-engine local ASR, multi-provider cloud ASR, and LLM post-processing.
+Local ASR: SenseVoice (streaming) + Qwen3-ASR (final calibration), both as Python WebSocket services managed by `SenseVoiceServerManager`.
+Cloud ASR: 7 providers implemented (Volcano, OpenAI, Deepgram, AssemblyAI, Soniox, Bailian, Baidu).
+Swift Package Manager project, no Xcode project file. Optional `sherpa-onnx.xcframework` for punctuation restoration.
 
 ## Build & Run
 
 ```bash
-# First time: build sherpa-onnx.xcframework (~5 min, requires cmake)
+# Local ASR setup (optional, skip for cloud-only)
+cd sensevoice-server && python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && cd ..
+cd qwen3-asr-server && python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && cd ..  # Apple Silicon only
+
+# Optional: punctuation restoration module (~5 min, requires cmake)
 bash scripts/build-sherpa.sh
 
 swift build -c release
@@ -21,10 +26,11 @@ The built binary is at `.build/release/Type4Me`. To package it as a `.app` bundl
 
 Multi-provider ASR support via `ASRProvider` enum + `ASRProviderConfig` protocol + `ASRProviderRegistry`.
 
-- `ASRProvider` enum: 13 cases (sherpa/openai/azure/google/aws/deepgram/assemblyai/volcano/aliyun/tencent/baidu/iflytek/custom)
+- `ASRProvider` enum: 14 cases (sherpa/openai/azure/google/aws/deepgram/assemblyai/volcano/aliyun/bailian/tencent/baidu/iflytek/custom)
 - Each provider has its own Config type (e.g., `SherpaASRConfig`, `VolcanoASRConfig`) defining `credentialFields` for dynamic UI rendering
-- `ASRProviderRegistry`: maps provider to config type + client factory; `isAvailable` indicates whether a client implementation exists
-- `sherpa` (local), `volcano` (cloud), and `deepgram` (cloud) are fully implemented; others are coming soon
+- `ASRProviderRegistry`: maps provider to config type + client factory; `capabilities` indicates availability and streaming support
+- **Fully implemented**: sherpa (local, batch), volcano (streaming), deepgram (streaming), assemblyai (streaming), soniox (streaming), bailian (streaming), baidu (streaming), openai (batch)
+- **Config only (no client)**: azure, google, aws, aliyun, tencent, iflytek, custom
 
 ### Adding a New Provider
 
@@ -32,23 +38,28 @@ Multi-provider ASR support via `ASRProvider` enum + `ASRProviderConfig` protocol
 2. Write the client (implementing `SpeechRecognizer` protocol)
 3. Register `createClient` in `ASRProviderRegistry.all`
 
-## Local ASR (SherpaOnnx) Architecture
+## Local ASR Architecture (SenseVoice + Qwen3-ASR)
 
-### Models
-- Three streaming models defined in `ModelManager.StreamingModel`: zipformerSmallCtc (~20MB), zipformerCtcMulti (~236MB), paraformerBilingual (~1GB)
-- Auxiliary models: offlineParaformer (~700MB, for dual-channel), punctuation CT-Transformer (~72MB)
-- Models downloaded from GitHub releases (tar.bz2), stored at `~/Library/Application Support/Type4Me/Models/`
-- Selected model persisted via UserDefaults key `tf_selectedStreamingModel`
+### Dual-Engine Design
+- **SenseVoice** (`sensevoice-server/`): Python FastAPI WebSocket service, provides real-time streaming recognition (partial results as you speak)
+- **Qwen3-ASR** (`qwen3-asr-server/`): Python WebSocket service using MLX (Metal GPU), provides final calibration on complete audio for higher accuracy. Apple Silicon only.
+- `SenseVoiceServerManager`: manages both Python server processes, auto-detects Apple Silicon vs Intel, assigns dynamic ports, saves PIDs for graceful shutdown
 
 ### Recognition Pipeline
-1. `SherpaASRClient` (streaming) — real-time recognition, skips first 400ms (6400 samples) to avoid start-sound interference
-2. `SherpaOfflineASRClient` (offline) — single-pass recognition on complete audio for dual-channel mode
-3. `SherpaPunctuationProcessor` — CT-Transformer post-processing adds punctuation
+1. `SenseVoiceWSClient` connects to local Python servers via WebSocket
+2. Three modes: SenseVoice streaming only, Qwen3-only (final result), or hybrid (SenseVoice streaming + Qwen3 final calibration)
+3. Qwen3 incremental speculative transcription with debounce for progressive results
+4. `SherpaPunctuationProcessor` (optional) — CT-Transformer post-processing adds punctuation (requires `sherpa-onnx.xcframework`)
 
-### SherpaOnnx Integration
+### Models
+- One streaming model in `ModelManager.StreamingModel`: `senseVoiceSmall` (~228MB, zh/en/yue/ja/ko)
+- Auxiliary models: `offlineParaformer` (~700MB), `punctuation` CT-Transformer (~72MB)
+- Models downloaded from GitHub releases (tar.bz2), stored at `~/Library/Application Support/Type4Me/models/`
+
+### SherpaOnnx Integration (optional, for punctuation only)
 - `SherpaOnnxBridge.swift` — Swift wrapper over C API (no Obj-C bridging header needed)
-- `sherpa-onnx.xcframework` — built locally via `scripts/build-sherpa.sh`, not checked into git (156MB)
-- `Package.swift` uses runtime detection: `hasSherpaFramework` flag conditionally links SherpaOnnxLib
+- `sherpa-onnx.xcframework` — built locally via `scripts/build-sherpa.sh`, not checked into git
+- `Package.swift` uses runtime detection: `hasSherpaFramework` flag conditionally defines `HAS_SHERPA_ONNX` and links SherpaOnnxLib
 
 ## Download Manager (`ModelManager`)
 
@@ -88,24 +99,29 @@ Credentials are stored at `~/Library/Application Support/Type4Me/credentials.jso
 | Path | Responsibility |
 |---|---|
 | `Type4Me/ASR/ASRProvider.swift` | Provider enum + protocol + CredentialField |
-| `Type4Me/ASR/ASRProviderRegistry.swift` | Registry: provider → config + client factory |
+| `Type4Me/ASR/ASRProviderRegistry.swift` | Registry: provider → config + client factory + capabilities |
 | `Type4Me/ASR/Providers/*.swift` | Per-vendor Config implementations |
 | `Type4Me/ASR/SpeechRecognizer.swift` | SpeechRecognizer protocol + LLMConfig + event types |
-| `Type4Me/ASR/SherpaASRClient.swift` | Local streaming ASR (Paraformer/Zipformer) |
-| `Type4Me/ASR/SherpaOfflineASRClient.swift` | Local offline ASR (single-pass) |
-| `Type4Me/ASR/SherpaPunctuationProcessor.swift` | Local punctuation restoration |
-| `Type4Me/Bridge/SherpaOnnxBridge.swift` | SherpaOnnx C API Swift bridge |
-| `Type4Me/ASR/VolcASRClient.swift` | Cloud streaming ASR (WebSocket) |
-| `Type4Me/ASR/VolcFlashASRClient.swift` | Cloud Flash ASR (HTTP, one-shot) |
+| `Type4Me/ASR/SenseVoiceWSClient.swift` | Local ASR client (WebSocket to Python servers, dual-engine) |
+| `Type4Me/ASR/VolcASRClient.swift` | Cloud streaming ASR (Volcano, WebSocket) |
+| `Type4Me/ASR/DeepgramASRClient.swift` | Cloud streaming ASR (Deepgram, WebSocket) |
+| `Type4Me/ASR/OpenAIASRClient.swift` | Cloud batch ASR (OpenAI, REST) |
+| `Type4Me/ASR/SherpaPunctuationProcessor.swift` | Optional punctuation restoration (SherpaOnnx) |
+| `Type4Me/Bridge/SherpaOnnxBridge.swift` | SherpaOnnx C API Swift bridge (conditional) |
+| `Type4Me/Services/SenseVoiceServerManager.swift` | Local Python server lifecycle (SenseVoice + Qwen3-ASR) |
 | `Type4Me/Session/RecognitionSession.swift` | Core state machine: record → ASR → inject |
 | `Type4Me/Audio/AudioCaptureEngine.swift` | Audio capture, `getRecordedAudio()` returns full recording |
 | `Type4Me/UI/AppState.swift` | `ProcessingMode` definition, built-in mode list |
-| `Type4Me/Services/ModelManager.swift` | Local model download, validation, selection |
+| `Type4Me/Services/ModelManager.swift` | SenseVoice model download, validation, selection |
 | `Type4Me/Services/KeychainService.swift` | Credential read/write (provider groups + migration) |
 | `Type4Me/Services/HotwordStorage.swift` | ASR hotword storage (UserDefaults) |
+| `Type4Me/LLM/LLMProvider.swift` | 13 LLM providers (incl. local Qwen offline) |
+| `Type4Me/LLM/LLMProviderRegistry.swift` | LLM provider → config + client factory |
 | `Type4Me/Session/SoundFeedback.swift` | Start/stop/error sounds, multiple sound styles |
+| `sensevoice-server/server.py` | SenseVoice streaming ASR + optional local Qwen LLM |
+| `qwen3-asr-server/server.py` | Qwen3-ASR calibration engine (MLX/Metal, Apple Silicon) |
 | `scripts/deploy.sh` | Build + deploy + launch |
-| `scripts/build-sherpa.sh` | Build sherpa-onnx.xcframework from source |
+| `scripts/build-sherpa.sh` | Build sherpa-onnx.xcframework (optional, for punctuation) |
 
 ## Development Lessons & Patterns
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.6.0 — 应用内更新 + Apple Speech + Bug 修复 (2026-03-30)
+
+- 应用内更新：设置页 About 标签直接下载新版本并自动安装重启，Local 版更新时自动保留本地 ASR 模型
+- 新增 Apple Speech 识别引擎：macOS 原生语音识别，无需 API Key，支持多语言
+- 修复长录音（40-70s+）按快捷键停止时文字丢失：toggle 状态反转导致 onStart 触发 forceReset，现在安全重定向到 stop
+- 火山引擎模型选项简化命名（"流式语音识别模型 2.0" → "模型 2.0（推荐，更便宜）"）
+- ASR 服务启动时显示「启动中」状态提示
+- 片段替换引擎优化，移除冗余映射词条和编译缓存
+- CLAUDE.md 更新为 SenseVoice + Qwen3-ASR 双引擎架构描述
+
 ## v1.5.1 — Bug 修复 + 稳定性改进 (2026-03-30)
 
 - 修复片段替换链式叠加 bug：正则缺少 word boundary，导致前一条替换的产物被后续规则二次匹配（如 "Cloud Code" → "Claudee Code"）

@@ -12,11 +12,13 @@ struct Type4MeApp: App {
         ) {
             MenuBarContent()
                 .environment(appDelegate.appState)
+                .environment(appDelegate.appUpdater)
         }
 
         Window(L("Type4Me 设置", "Type4Me Settings"), id: "settings") {
             SettingsView()
                 .environment(appDelegate.appState)
+                .environment(appDelegate.appUpdater)
         }
         .defaultSize(width: 1200, height: 800)
         .defaultPosition(.center)
@@ -25,6 +27,7 @@ struct Type4MeApp: App {
         Window(L("Type4Me 设置向导", "Type4Me Setup"), id: "setup") {
             SetupWizardView()
                 .environment(appDelegate.appState)
+                .environment(appDelegate.appUpdater)
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -38,6 +41,7 @@ struct Type4MeApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let appState = AppState()
+    let appUpdater = AppUpdater()
     private let startSoundDelay: Duration = .milliseconds(200)
     private var floatingBarController: FloatingBarController?
     private let hotkeyManager = HotkeyManager()
@@ -110,18 +114,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .completed:
                         appState.stopRecording()
                         self.hotkeyManager.isProcessing = false
-                        self.hotkeyManager.resetActiveState()
+                        self.safeResetHotkeyState()
                     case .processingResult(let text):
                         appState.showProcessingResult(text)
                         self.hotkeyManager.isProcessing = true
                     case .finalized(let text, let injection):
                         appState.finalize(text: text, outcome: injection)
                         self.hotkeyManager.isProcessing = false
-                        self.hotkeyManager.resetActiveState()
+                        self.safeResetHotkeyState()
                     case .error(let error):
                         appState.showError(self.userFacingMessage(for: error))
                         self.hotkeyManager.isProcessing = false
-                        self.hotkeyManager.resetActiveState()
+                        self.safeResetHotkeyState()
                     }
                 }
             }
@@ -129,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Start periodic update checking
         UpdateChecker.shared.startPeriodicChecking(appState: appState)
+        appUpdater.checkPostUpdateStatus()
 
         // Reconcile current mode against the active provider before hotkeys are registered.
         refreshModeAvailability()
@@ -239,6 +244,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 style: capturedMode.hotkeyStyle,
                 onStart: { [weak self] in
                     guard let self else { return }
+
+                    // Safety: if already recording, the toggle state is out of sync.
+                    // Redirect to stop so we don't discard accumulated text.
+                    let alreadyRecording = MainActor.assumeIsolated {
+                        self.appState.barPhase == .recording || self.appState.barPhase == .preparing
+                    }
+                    if alreadyRecording {
+                        NSLog("[Type4Me] >>> HOTKEY: toggle desync – onStart while recording, redirecting to STOP")
+                        DebugFileLogger.log("hotkey toggle desync: onStart while recording, redirecting to stop")
+                        MainActor.assumeIsolated { self.hotkeyManager.resetActiveState() }
+                        Task { @MainActor in self.appState.stopRecording() }
+                        Task { await self.session.stopRecording() }
+                        return
+                    }
+
                     let selectedProvider = KeychainService.selectedASRProvider
                     let resolvedMode = ASRProviderRegistry.resolvedMode(for: capturedMode, provider: selectedProvider)
                     let effectiveMode = availableModes.first(where: { $0.id == resolvedMode.id }) ?? resolvedMode
@@ -500,6 +520,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         return true
+    }
+
+    /// Only reset hotkey state when no new recording is in progress.
+    /// Prevents a stale finalized/completed event from corrupting the toggle
+    /// state of a recording that started after the event was emitted.
+    private func safeResetHotkeyState() {
+        let phase = appState.barPhase
+        if phase == .recording || phase == .preparing {
+            DebugFileLogger.log("safeResetHotkeyState: skipped (barPhase=\(phase))")
+            return
+        }
+        hotkeyManager.resetActiveState()
     }
 
     private func userFacingMessage(for error: Error) -> String {

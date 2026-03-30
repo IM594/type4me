@@ -33,6 +33,24 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
         interleaved: true
     )!
 
+    static func makePCMBuffer(from pcmData: Data) -> AVAudioPCMBuffer? {
+        guard pcmData.count.isMultiple(of: MemoryLayout<Int16>.size) else { return nil }
+
+        let frameCount = AVAudioFrameCount(pcmData.count / MemoryLayout<Int16>.size)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCount) else {
+            return nil
+        }
+
+        buffer.frameLength = frameCount
+        guard let mData = buffer.mutableAudioBufferList.pointee.mBuffers.mData else {
+            return nil
+        }
+
+        pcmData.copyBytes(to: mData.assumingMemoryBound(to: UInt8.self), count: pcmData.count)
+        buffer.mutableAudioBufferList.pointee.mBuffers.mDataByteSize = UInt32(pcmData.count)
+        return buffer
+    }
+
     // MARK: - Public
 
     var onAudioChunk: ((Data) -> Void)?
@@ -41,17 +59,26 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
     // MARK: - Private
 
     private var captureSession: AVCaptureSession?
+    private let stateLock = NSLock()
     private let bufferLock = NSLock()
     private var buffer = Data()
     private var accumulatedAudio = Data()
     private var converter: AVAudioConverter?
     private let outputQueue = DispatchQueue(label: "com.type4me.audiocapture")
+    private let outputQueueKey = DispatchSpecificKey<UInt8>()
+    private let outputQueueTag: UInt8 = 1
+    private var activeOutput: AVCaptureAudioDataOutput?
     private var levelCounter = 0
 
     // MARK: - Warm-up
 
     private var isWarmedUp = false
     private var warmSession: AVCaptureSession?
+
+    override init() {
+        super.init()
+        outputQueue.setSpecific(key: outputQueueKey, value: outputQueueTag)
+    }
 
     /// Pre-initialize the audio capture pipeline so the first real recording starts instantly.
     func warmUp() {
@@ -120,6 +147,9 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
             throw AudioCaptureError.converterCreationFailed
         }
         session.addOutput(output)
+        stateLock.withLock {
+            activeOutput = output
+        }
 
         session.startRunning()
         captureSession = session
@@ -129,6 +159,13 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
 
     func stop() {
         captureSession?.stopRunning()
+        drainOutputQueue()
+        let output = stateLock.withLock { () -> AVCaptureAudioDataOutput? in
+            let current = activeOutput
+            activeOutput = nil
+            return current
+        }
+        output?.setSampleBufferDelegate(nil, queue: nil)
         captureSession = nil
         converter = nil
         levelCounter = 0
@@ -143,6 +180,8 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        let isActiveOutput = stateLock.withLock { activeOutput === output }
+        guard isActiveOutput else { return }
         guard let pcmBuffer = sampleBuffer.toPCMBuffer() else { return }
 
         // Emit audio level ~20 times/sec (every 3rd callback at typical 60Hz buffer rate)
@@ -254,6 +293,13 @@ final class AudioCaptureEngine: NSObject, @unchecked Sendable, AVCaptureAudioDat
         let size = buffer.count
         bufferLock.unlock()
         return size
+    }
+
+    private func drainOutputQueue() {
+        if DispatchQueue.getSpecific(key: outputQueueKey) == outputQueueTag {
+            return  // already on outputQueue, skip to avoid deadlock
+        }
+        outputQueue.sync {}
     }
 
     private func flushRemaining() {
