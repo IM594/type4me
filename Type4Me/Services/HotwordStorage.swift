@@ -25,40 +25,47 @@ enum HotwordStorage {
     // MARK: - Default hotwords (used for initial seeding)
 
     /// Common tech terms that ASR engines frequently mis-transcribe.
+    /// Focused on AI/dev terms that benefit from hotword boosting.
     static let defaultHotwords: [String] = [
         // ── AI models & companies ──
-        "Claude", "Claude Code", "GPT", "GPT-4", "GPT-4o", "Gemini", "LLaMA", "Llama",
-        "Anthropic", "OpenAI", "DeepSeek", "Qwen", "Mistral", "Cohere", "Perplexity",
-        "Midjourney", "Stable Diffusion", "ComfyUI", "Hugging Face", "xAI", "Grok",
-        "Copilot", "ChatGPT", "DALL-E", "Whisper", "Sora",
+        "Claude", "Claude Code", "GPT", "GPT-4", "GPT-4o", "GPT-5", "Gemini",
+        "LLaMA", "Llama", "Anthropic", "OpenAI", "DeepSeek", "Qwen", "Qwen3",
+        "Mistral", "Cohere", "Perplexity", "Midjourney", "Stable Diffusion",
+        "Hugging Face", "xAI", "Grok", "Groq", "Copilot", "ChatGPT",
+        "DALL-E", "Whisper", "Sora",
+
+        // ── AI coding tools ──
+        "Cursor", "Windsurf", "Cline", "Aider", "Devin", "Codex",
+        "vibe coding", "MCP",
+
+        // ── AI frameworks & infra ──
+        "LangChain", "LlamaIndex", "CrewAI", "AutoGen", "Dify", "Coze",
+        "Ollama", "vLLM", "ComfyUI", "ControlNet", "OpenRouter", "LiteLLM",
+
+        // ── AI concepts ──
+        "LLM", "RAG", "LoRA", "QLoRA", "RLHF", "DPO", "agentic",
+        "multimodal", "fine-tune", "fine-tuning", "embedding", "tokenizer",
+        "transformer", "quantization", "GGUF", "ONNX", "TTS", "ASR",
 
         // ── Dev tools ──
-        "GitHub", "GitLab", "VS Code", "Cursor", "Docker", "Kubernetes",
+        "GitHub", "GitLab", "VS Code", "Docker", "Kubernetes",
         "Terraform", "Homebrew", "npm", "pip", "Vercel", "Netlify", "Supabase",
-        "Firebase", "Redis", "PostgreSQL", "MongoDB", "Elasticsearch", "Grafana",
-        "Prometheus", "Nginx", "Ollama", "Pinecone", "ChromaDB", "Weaviate",
+        "Firebase", "Redis", "PostgreSQL", "MongoDB", "Elasticsearch",
+        "Nginx", "Pinecone", "ChromaDB", "Weaviate",
 
         // ── Programming terms ──
-        "API", "SDK", "LLM", "ASR", "token", "prompt", "fine-tune", "fine-tuning",
-        "embedding", "RAG", "webhook", "microservice", "DevOps", "CI/CD", "GraphQL",
-        "WebSocket", "REST", "OAuth", "JWT", "CORS", "SSL", "DNS", "CRUD",
-        "refactor", "linting", "boilerplate", "serialization",
+        "API", "SDK", "token", "prompt", "webhook", "microservice",
+        "DevOps", "CI/CD", "GraphQL", "WebSocket", "REST", "OAuth", "JWT",
+        "JSON", "DMG",
 
         // ── Frameworks & languages ──
         "React", "Next.js", "Vue", "Angular", "SwiftUI", "PyTorch", "TensorFlow",
-        "LangChain", "Tailwind", "TypeScript", "JavaScript", "Rust", "Kotlin",
+        "Tailwind", "TypeScript", "JavaScript", "Rust", "Kotlin",
         "Flutter", "Django", "FastAPI", "Express", "Vite", "Nuxt", "SvelteKit",
         "Prisma", "Drizzle",
 
-        // ── Business & work ──
-        "deadline", "meeting", "schedule", "feedback", "stakeholder", "milestone",
-        "roadmap", "KPI", "OKR", "standup", "sprint", "backlog", "retrospective",
-        "onboarding", "sync", "blockers",
-
-        // ── Daily high-freq tech ──
-        "Wi-Fi", "Bluetooth", "AirDrop", "iCloud", "FaceTime", "App Store",
-        "podcast", "playlist", "subscription", "screenshot", "notification",
-        "AirPods", "HomePod", "MacBook", "iPad",
+        // ── Hardware ──
+        "NVIDIA", "CUDA", "GPU", "TPU",
     ]
 
     // MARK: - Initialization
@@ -66,12 +73,10 @@ enum HotwordStorage {
     private static let migratedKey = "tf_hotwords_migrated_to_file_v2"
     private static let oldUDKey = "tf_hotwords"
 
-    /// Seeds built-in file and migrates old UserDefaults data to user file.
+    /// Syncs built-in file with code defaults and migrates old UserDefaults data.
     static func migrateIfNeeded() {
-        // Seed built-in file if missing
-        if !FileManager.default.fileExists(atPath: builtinFileURL.path) {
-            saveBuiltin(defaultHotwords)
-        }
+        // Always sync built-in file with code defaults (picks up new entries on app update)
+        saveBuiltin(defaultHotwords)
 
         guard !UserDefaults.standard.bool(forKey: migratedKey) else { return }
         defer { UserDefaults.standard.set(true, forKey: migratedKey) }

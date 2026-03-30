@@ -32,11 +32,12 @@ enum SnippetStorage {
     // MARK: - Default snippets (used for initial seeding)
 
     /// Default ASR correction mappings. Seeded into builtin-snippets.json on first launch.
-    /// Triggers are matched case-insensitively and space-insensitively.
+    /// Triggers are matched case-insensitively and space-insensitively via `buildFlexPattern`.
     ///
     /// Verified against: Volcengine Seed ASR 2.0, Qwen3-ASR 0.6B/1.7B, SenseVoice-Small.
     static let defaultSnippets: [(trigger: String, value: String)] = [
-        // ── vibe coding (all engines consistently fail) ──
+
+        // ── vibe coding (ASR 几乎必错) ──
         ("web coding",      "vibe coding"),
         ("webb coding",     "vibe coding"),
         ("vab coding",      "vibe coding"),
@@ -44,23 +45,131 @@ enum SnippetStorage {
         ("vibes coding",    "vibe coding"),
         ("Vipcoding",       "vibe coding"),
         ("vipe coding",     "vibe coding"),
+        ("vb coding",       "vibe coding"),
+        ("vib coding",      "vibe coding"),
+        ("va coding",       "vibe coding"),
+        ("vivcoding",       "vibe coding"),
+        ("wife coding",     "vibe coding"),
 
-        // ── Claude → Cloud (universal error) ──
+        // ── Claude ──
         ("Cloud Code",      "Claude Code"),
+        ("clod",            "Claude"),
+        ("clawed",          "Claude"),
+        ("claud",           "Claude"),
 
-        // ── Model & company names ──
+        // ── Anthropic ──
         ("Asthropic",       "Anthropic"),
         ("Anthropropic",    "Anthropic"),
         ("Anthropick",      "Anthropic"),
         ("Anthrobic",       "Anthropic"),
+        ("and tropic",      "Anthropic"),
+        ("an tropic",       "Anthropic"),
+        ("anthrophic",      "Anthropic"),
+
+        // ── ChatGPT ──
+        ("chat GPT",        "ChatGPT"),
+
+        // ── DeepSeek ──
+        ("deepse",          "DeepSeek"),
+        ("deep sick",       "DeepSeek"),
+        ("deep seek",       "DeepSeek"),
+        ("deep sec",        "DeepSeek"),
+
+        // ── Gemini ──
+        ("jiminy",          "Gemini"),
+        ("gem any",         "Gemini"),
+
+        // ── Qwen ──
+        ("Queen三",         "Qwen3"),
+        ("Queen 三",        "Qwen3"),
+        ("qun三",           "Qwen3"),
+        ("Qu3",             "Qwen3"),
+        ("Queen三点五",     "Qwen3.5"),
+        ("quin三点五",      "Qwen3.5"),
+        ("qun三点五",       "Qwen3.5"),
+        ("quin三点",        "Qwen3"),
+
+        // ── Grok ──
+        ("grock",           "Grok"),
+
+        // ── Llama / Ollama ──
         ("ELMA",            "Llama"),
         ("OELMA",           "Ollama"),
+
+        // ── Midjourney / Copilot / Perplexity ──
+        ("mid journey",     "Midjourney"),
+        ("co pilot",        "Copilot"),
+        ("perplex city",    "Perplexity"),
+
+        // ── Hugging Face ──
+        ("hugging phase",   "Hugging Face"),
+        ("hug and face",    "Hugging Face"),
+
+        // ── Codex ──
+        ("codecs",          "Codex"),
+        ("CodeX",           "Codex"),
+        ("Codec",           "Codex"),
+
+        // ── JSON ──
+        ("Jason",           "JSON"),
+
+        // ── fine-tuning ──
         ("finight tuning",  "fine-tuning"),
+        ("find tuning",     "fine-tuning"),
+        ("fine tuning",     "fine-tuning"),
         ("fine tune",       "fine-tune"),
 
-        // ── Frameworks & tools ──
+        // ── LoRA / QLoRA ──
+        ("lore a",          "LoRA"),
+        ("lor a",           "LoRA"),
+        ("Q lore a",        "QLoRA"),
+
+        // ── agentic ──
+        ("a genetic",       "agentic"),
+        ("a gentic",        "agentic"),
+
+        // ── multimodal / multi-agent ──
+        ("multi modal",     "multimodal"),
+        ("multi agent",     "multi-agent"),
+        ("multiag",         "multi-agent"),
+
+        // ── few-shot / zero-shot / in-context learning ──
+        ("few shot",        "few-shot"),
+        ("zero shot",       "zero-shot"),
+        ("in context learning", "in-context learning"),
+
+        // ── embedding / context window ──
+        ("imbedding",       "embedding"),
+        ("contexwin",       "context window"),
+        ("context win",     "context window"),
+
+        // ── LangChain / LlamaIndex ──
         ("long chain",      "LangChain"),
         ("long train",      "LangChain"),
+        ("llama index",     "LlamaIndex"),
+        ("lama index",      "LlamaIndex"),
+
+        // ── AI frameworks (CrewAI, AutoGen, ComfyUI, ControlNet) ──
+        ("crew AI",         "CrewAI"),
+        ("auto gen",        "AutoGen"),
+        ("auto Jen",        "AutoGen"),
+        ("comfy UI",        "ComfyUI"),
+        ("control net",     "ControlNet"),
+
+        // ── AI coding tools ──
+        ("wind surf",       "Windsurf"),
+        ("Klein",           "Cline"),
+        ("C line",          "Cline"),
+        ("aid her",         "Aider"),
+        ("open router",     "OpenRouter"),
+        ("light LLM",       "LiteLLM"),
+        ("lite LLM",        "LiteLLM"),
+        ("VLLM",            "vLLM"),
+        ("llama CPP",       "llama.cpp"),
+        ("curser",          "Cursor"),
+        ("克色",            "Cursor"),
+
+        // ── Dev tools ──
         ("get hub",         "GitHub"),
         ("git hub",         "GitHub"),
         ("VS code",         "VS Code"),
@@ -68,14 +177,20 @@ enum SnippetStorage {
         ("Kubenetes",       "Kubernetes"),
         ("Nextjs",          "Next.js"),
         ("type script",     "TypeScript"),
-        ("open source",     "open-source"),
-
-        // ── SenseVoice-specific garbled output ──
-        ("pinecom",         "Pinecone"),
         ("typepescript",    "TypeScript"),
-        ("contexwin",       "context window"),
-        ("multiag",         "multi-agent"),
-        ("deepse",          "DeepSeek"),
+        ("graph QL",        "GraphQL"),
+        ("web socket",      "WebSocket"),
+        ("pinecom",         "Pinecone"),
+
+        // ── Infra & formats ──
+        ("DM g",            "DMG"),
+        ("verse cell",      "Vercel"),
+        ("verse L",         "Vercel"),
+        ("super base",      "Supabase"),
+        ("cloud flare",     "Cloudflare"),
+        ("cloud flair",     "Cloudflare"),
+        ("N video",         "NVIDIA"),
+        ("onyx",            "ONNX"),
     ]
 
     // MARK: - Initialization
@@ -83,12 +198,10 @@ enum SnippetStorage {
     private static let migratedKey = "tf_snippets_migrated_to_file_v2"
     private static let oldUDKey = "tf_snippets"
 
-    /// Seeds built-in file and migrates old UserDefaults data to user file.
+    /// Syncs built-in file with code defaults and migrates old UserDefaults data.
     static func migrateIfNeeded() {
-        // Seed built-in file if missing
-        if !FileManager.default.fileExists(atPath: builtinFileURL.path) {
-            saveBuiltin(defaultSnippets)
-        }
+        // Always sync built-in file with code defaults (picks up new entries on app update)
+        saveBuiltin(defaultSnippets)
 
         guard !UserDefaults.standard.bool(forKey: migratedKey) else { return }
         defer { UserDefaults.standard.set(true, forKey: migratedKey) }
