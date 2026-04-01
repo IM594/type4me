@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// Cached font for text measurement (module-level to avoid generic-type static restriction).
+private let floatingBarFont = NSFont.systemFont(ofSize: 14, weight: .medium)
+
 // MARK: - FloatingBarState Protocol
 
 @MainActor
@@ -318,8 +321,7 @@ struct FloatingBarView<S: FloatingBarState>: View {
 
     /// Measure actual rendered width using the same font as the floating bar text.
     private func measureText(_ string: String) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 14, weight: .medium)
-        return ceil((string as NSString).size(withAttributes: [.font: font]).width)
+        ceil((string as NSString).size(withAttributes: [.font: floatingBarFont]).width)
     }
 }
 

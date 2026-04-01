@@ -3,6 +3,7 @@ import Foundation
 enum KeychainService {
 
     private static let lock = NSLock()
+    private static var cachedCredentials: [String: Any]?
 
     private static var credentialsURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -13,11 +14,21 @@ enum KeychainService {
 
     // MARK: - Core read/write (now supports nested objects)
 
-    private static func loadAll() -> [String: Any] {
+    /// Load without acquiring lock — caller must hold `lock`.
+    private static func _loadAllUnlocked() -> [String: Any] {
+        if let cached = cachedCredentials { return cached }
         guard let data = try? Data(contentsOf: credentialsURL),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [:] }
+        cachedCredentials = dict
         return dict
+    }
+
+    /// Thread-safe load.
+    private static func loadAll() -> [String: Any] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _loadAllUnlocked()
     }
 
     private static func saveAll(_ dict: [String: Any]) throws {
@@ -34,9 +45,10 @@ enum KeychainService {
     static func save(key: String, value: String) throws {
         lock.lock()
         defer { lock.unlock() }
-        var dict = loadAll()
+        var dict = _loadAllUnlocked()
         dict[key] = value
         try saveAll(dict)
+        cachedCredentials = dict
     }
 
     static func load(key: String) -> String? {
@@ -47,9 +59,11 @@ enum KeychainService {
     static func delete(key: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        var dict = loadAll()
+        var dict = _loadAllUnlocked()
         guard dict.removeValue(forKey: key) != nil else { return false }
-        return (try? saveAll(dict)) != nil
+        let ok = (try? saveAll(dict)) != nil
+        if ok { cachedCredentials = dict } else { cachedCredentials = nil }
+        return ok
     }
 
     // MARK: - Selected ASR Provider (UserDefaults)
@@ -80,9 +94,10 @@ enum KeychainService {
     static func saveASRCredentials(for provider: ASRProvider, values: [String: String]) throws {
         lock.lock()
         defer { lock.unlock() }
-        var dict = loadAll()
+        var dict = _loadAllUnlocked()
         dict[asrStorageKey(for: provider)] = values
         try saveAll(dict)
+        cachedCredentials = dict
     }
 
     static func loadASRCredentials(for provider: ASRProvider) -> [String: String]? {
@@ -158,9 +173,10 @@ enum KeychainService {
     static func saveLLMCredentials(for provider: LLMProvider, values: [String: String]) throws {
         lock.lock()
         defer { lock.unlock() }
-        var dict = loadAll()
+        var dict = _loadAllUnlocked()
         dict[llmStorageKey(for: provider)] = values
         try saveAll(dict)
+        cachedCredentials = dict
     }
 
     static func loadLLMCredentials(for provider: LLMProvider) -> [String: String]? {
@@ -209,7 +225,7 @@ enum KeychainService {
         migrateUserDefaults()
         lock.lock()
         defer { lock.unlock() }
-        let dict = loadAll()
+        let dict = _loadAllUnlocked()
 
         var migrated = false
         var mutableDict = dict
@@ -285,6 +301,7 @@ enum KeychainService {
 
         if migrated {
             try? saveAll(mutableDict)
+            cachedCredentials = mutableDict
         }
     }
 

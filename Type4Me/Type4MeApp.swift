@@ -79,9 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Bridge audio level → isolated meter (no SwiftUI observation overhead)
         Task {
             await session.setOnAudioLevel { level in
-                Task { @MainActor in
-                    appState.audioLevel.current = level
-                }
+                appState.audioLevel.current = level
             }
         }
 

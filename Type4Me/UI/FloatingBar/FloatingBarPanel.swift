@@ -75,6 +75,11 @@ final class FloatingBarController {
     }
 
     func show() {
+        // Cancel any in-progress hide animation to prevent race:
+        // hide's completion could orderOut after we've shown again.
+        panel.animator().alphaValue = 1
+        panel.contentView?.layer?.removeAllAnimations()
+
         panel.setContentSize(panelSize)
         panel.setFrame(NSRect(origin: panel.frame.origin, size: panelSize), display: false)
         panel.positionAtBottomCenter()
@@ -88,6 +93,7 @@ final class FloatingBarController {
     }
 
     func hide() {
+        guard panel.isVisible else { return }
         let panelRef = panel
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.25
@@ -95,6 +101,8 @@ final class FloatingBarController {
             panelRef.animator().alphaValue = 0
         }, completionHandler: {
             MainActor.assumeIsolated {
+                // Only orderOut if still faded — show() may have interrupted
+                guard panelRef.alphaValue < 0.01 else { return }
                 panelRef.orderOut(nil)
             }
         })

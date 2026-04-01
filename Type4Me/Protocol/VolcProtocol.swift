@@ -46,13 +46,13 @@ enum VolcProtocol: Sendable {
             "force_to_speech_time": 1000,
         ]
 
-        if let contextString = buildContextString(hotwords: options.hotwords) {
-            requestDict["context"] = contextString
-        }
-
         var corpus: [String: Any] = [:]
         if let boostingTableID = sanitized(options.boostingTableID) {
+            // Cloud boosting table: skip inline hotwords, use table ID only
             corpus["boosting_table_id"] = boostingTableID
+        } else if let contextString = buildContextString(hotwords: options.hotwords) {
+            // No cloud table: fall back to inline hotwords
+            requestDict["context"] = contextString
         }
         if !corpus.isEmpty {
             requestDict["corpus"] = corpus

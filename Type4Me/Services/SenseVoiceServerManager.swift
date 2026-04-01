@@ -47,7 +47,11 @@ actor SenseVoiceServerManager {
     }
 
     /// Port of the running Qwen3-ASR server.
-    nonisolated(unsafe) private(set) static var currentQwen3Port: Int?
+    private static let _portLock = OSAllocatedUnfairLock(initialState: Int?(nil))
+    static var currentQwen3Port: Int? {
+        get { _portLock.withLock { $0 } }
+        set { _portLock.withLock { $0 = newValue } }
+    }
 
     private let logger = Logger(subsystem: "com.type4me.sensevoice", category: "ServerManager")
 

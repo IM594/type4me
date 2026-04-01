@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.6.2 — Soniox 重构 + 异步校准 + 并发安全 (2026-04-01)
+
+- Soniox 客户端重构：去掉 ConnectionGate/Delegate，简化为直连 WebSocket
+- Soniox 异步校准：录音结束后并行启动完整音频转录，自动替换更准确的结果
+- Soniox 协议优化：start message 加 language_hints (zh/en)、max_endpoint_delay_ms
+- Soniox 配置简化：移除 model 选择字段，默认使用最新模型
+- SonioxAsyncClient：新增文件级异步转录（上传 → 轮询 → 获取结果）
+- 火山引擎热词逻辑优化：有云端词表 (boosting_table_id) 时跳过 inline hotwords，避免冲突
+- 并发安全修复：KeychainService 凭证缓存、SnippetStorage/HotwordStorage 文件缓存加锁
+- SystemVolumeManager：CoreAudio 操作移到专用后台队列，避免蓝牙设备卡主线程
+- SenseVoiceServerManager：currentQwen3Port 改用 OSAllocatedUnfairLock
+- PromptContext.capture() 改为 async，AX 读取用 detached task + timeout 防死锁
+- DebugFileLogger：ISO8601DateFormatter 复用，避免重复创建
+- HotwordStorage：新增 builtinVersion 版本号 + loadCloudCompatible() 过滤方法
+
 ## v1.6.1 — 流式识别韧性 + 代理绕过 + 词库优化 (2026-03-31)
 
 - 流式识别韧性大幅增强：按停止立即响应、不再重复粘贴、超时自动恢复

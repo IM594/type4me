@@ -50,7 +50,12 @@ enum DebugFileLogger {
         }
     }
 
+    private static let formatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        return f
+    }()
+
     private static func timestamp() -> String {
-        ISO8601DateFormatter().string(from: Date())
+        formatter.string(from: Date())
     }
 }

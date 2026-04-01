@@ -62,29 +62,39 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
     private var currentASRGuideLinks: [(prefix: String?, label: String, url: URL)] {
         switch selectedASRProvider {
         case .volcano:
-            return [(L("查看", "View"), L("配置指南", "setup guide"), URL(string: "https://my.feishu.cn/wiki/QdEnwBMfUi0mN4k3ucMcNYhUnXr")!)]
+            return [
+                (L("配置指南", "Setup guide"), L("查看", "view"), URL(string: "https://my.feishu.cn/wiki/QdEnwBMfUi0mN4k3ucMcNYhUnXr")!),
+            ]
         case .deepgram:
             return [
                 (L("可用模型", "Models"), L("查看", "view"), URL(string: "https://developers.deepgram.com/docs/models-languages-overview/")!),
-                (L("API Key", "API Key"), L("获取", "get"), URL(string: "https://developers.deepgram.com/docs/create-additional-api-keys")!),
+                ("API Key", L("获取", "get"), URL(string: "https://developers.deepgram.com/docs/create-additional-api-keys")!),
             ]
         case .assemblyai:
             return [
                 (L("可用模型", "Models"), L("查看", "view"), URL(string: "https://www.assemblyai.com/docs/getting-started/models")!),
-                (L("API Key", "API Key"), L("获取", "get"), URL(string: "https://www.assemblyai.com/docs/faq/how-to-get-your-api-key")!),
+                ("API Key", L("获取", "get"), URL(string: "https://www.assemblyai.com/docs/faq/how-to-get-your-api-key")!),
             ]
         case .soniox:
             return [
-                (L("可用模型", "Models"), L("查看", "view"), URL(string: "https://soniox.com/docs/stt/models")!),
-                (L("API Key", "API Key"), L("获取", "get"), URL(string: "https://console.soniox.com")!),
+                ("API Key", L("获取", "get"), URL(string: "https://console.soniox.com")!),
             ]
         case .bailian:
             return [
                 (L("可用模型", "Models"), L("查看", "view"), URL(string: "https://help.aliyun.com/zh/model-studio/fun-asr-realtime-websocket-api")!),
-                (L("API Key", "API Key"), L("获取", "get"), URL(string: "https://help.aliyun.com/zh/model-studio/get-api-key")!),
+                ("API Key", L("获取", "get"), URL(string: "https://help.aliyun.com/zh/model-studio/get-api-key")!),
             ]
         default:
             return []
+        }
+    }
+
+    @ViewBuilder
+    private func providerMenuItem(_ provider: ASRProvider) -> some View {
+        Button {
+            selectedASRProvider = provider
+        } label: {
+            Text(provider.displayName)
         }
     }
 
@@ -153,7 +163,7 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                         secondaryButton(L("修改", "Edit")) {
                             testTask?.cancel()
                             asrTestStatus = .idle
-                            asrCredentialValues = [:]
+                            asrCredentialValues = savedASRValues
                             editedFields = []
                             isEditingASR = true
                         }
@@ -185,6 +195,7 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                         .padding(.top, 4)
                 }
 
+
             }
         }
         .task {
@@ -195,6 +206,9 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
 
     // MARK: - Provider Picker
 
+    private static let recommendedProviders: [ASRProvider] = [.volcano, .soniox]
+    private static let localProviders: [ASRProvider] = [.apple, .sherpa]
+
     private var asrProviderPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(L("识别引擎", "Provider").uppercased())
@@ -202,15 +216,52 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                 .tracking(0.8)
                 .foregroundStyle(TF.settingsTextTertiary)
             HStack(spacing: 10) {
-                settingsDropdown(
-                    selection: Binding(
-                        get: { selectedASRProvider.rawValue },
-                        set: { if let p = ASRProvider(rawValue: $0) { selectedASRProvider = p } }
-                    ),
-                    options: ASRProvider.allCases
-                        .filter { $0.isLocal || (ASRProviderRegistry.entry(for: $0)?.isAvailable ?? false) }
-                        .map { ($0.rawValue, $0.displayName) }
-                )
+                let availableSet = Set(ASRProvider.allCases
+                    .filter { $0.isLocal || (ASRProviderRegistry.entry(for: $0)?.isAvailable ?? false) })
+                let recommended = Self.recommendedProviders.filter { availableSet.contains($0) }
+                let local = Self.localProviders.filter { availableSet.contains($0) }
+                let others = ASRProvider.allCases.filter { availableSet.contains($0) && !Self.recommendedProviders.contains($0) && !Self.localProviders.contains($0) }
+
+                Menu {
+                    if !recommended.isEmpty {
+                        Section(L("推荐", "Recommended")) {
+                            ForEach(recommended, id: \.rawValue) { provider in
+                                providerMenuItem(provider)
+                            }
+                        }
+                    }
+                    if !local.isEmpty {
+                        Section(L("本地", "Local")) {
+                            ForEach(local, id: \.rawValue) { provider in
+                                providerMenuItem(provider)
+                            }
+                        }
+                    }
+                    if !others.isEmpty {
+                        Section(L("其他", "Others")) {
+                            ForEach(others, id: \.rawValue) { provider in
+                                providerMenuItem(provider)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(selectedASRProvider.displayName)
+                            .font(.system(size: 13))
+                            .foregroundStyle(TF.settingsText)
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(TF.settingsTextTertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(TF.settingsCardAlt)
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.vertical, 6)
@@ -306,7 +357,15 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
         for field in currentASRFields {
             let val = asrCredentialValues[field.key] ?? ""
             guard !val.isEmpty else { continue }
-            rows.append((field.label, field.isSecure ? maskedSecret(val) : val))
+            let displayValue: String
+            if field.isSecure {
+                displayValue = maskedSecret(val)
+            } else if let option = field.options.first(where: { $0.value == val }) {
+                displayValue = option.label
+            } else {
+                displayValue = val
+            }
+            rows.append((field.label, displayValue))
         }
         return rows
     }

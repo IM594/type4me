@@ -392,8 +392,7 @@ actor RecognitionSession {
         state = .finishing
 
         let stopT0 = ContinuousClock.now
-        SystemVolumeManager.restore()  // Restore before stop sound plays
-        try? await Task.sleep(for: .milliseconds(50))  // Let OS apply volume change
+        SystemVolumeManager.restore()
         SoundFeedback.playStop()
 
         // Stop capture first so flushRemaining() can emit the tail audio chunk.
@@ -411,6 +410,29 @@ actor RecognitionSession {
         cancelSpeculativeLLM()
         let needsLLM = !currentMode.prompt.isEmpty
         let provider = activeProvider
+
+        // Kick off Soniox async calibration EARLY, in parallel with RT teardown.
+        // Grab audio now before audioEngine.stop() clears it.
+        let sonioxAsyncEnabled = provider == .soniox
+            && UserDefaults.standard.bool(forKey: "tf_sonioxAsyncCalibration")
+        var sonioxAsyncTask: Task<SonioxAsyncClient.TranscriptionResult?, Never>?
+        if sonioxAsyncEnabled, let sonioxConfig = currentConfig as? SonioxASRConfig {
+            let fullAudio = audioEngine.getRecordedAudio()
+            if !fullAudio.isEmpty {
+                let hotwords = HotwordStorage.loadEffective()
+                let bypass = ProxyBypassMode.current.bypassASR
+                let apiKey = sonioxConfig.apiKey
+                DebugFileLogger.log("stop: Soniox async kicked off early (\(fullAudio.count) bytes)")
+                sonioxAsyncTask = Task.detached {
+                    await SonioxAsyncClient.transcribe(
+                        audioData: fullAudio,
+                        apiKey: apiKey,
+                        hotwords: hotwords,
+                        bypassProxy: bypass
+                    )
+                }
+            }
+        }
 
         // ASR teardown: send endAudio and drain event stream with hard deadlines.
         // Uses detached tasks + continuation so a stuck client can't block stopRecording.
@@ -518,6 +540,27 @@ actor RecognitionSession {
         }
         uploadFailureFlag = nil
 
+        // Await Soniox async calibration result (kicked off earlier, in parallel with RT teardown).
+        if let asyncTask = sonioxAsyncTask {
+            let rtText = currentTranscript.composedText
+            onASREvent?(.processingResult(text: rtText))
+            if let result = await asyncTask.value, !result.text.isEmpty {
+                let changed = result.text != rtText
+                DebugFileLogger.log("stop: Soniox async done, \(result.text.count) chars, changed=\(changed)")
+                if changed {
+                    NSLog("[Session] Soniox async calibration changed result")
+                }
+                currentTranscript = RecognitionTranscript(
+                    confirmedSegments: [result.text],
+                    partialText: "",
+                    authoritativeText: result.text,
+                    isFinal: true
+                )
+            } else {
+                DebugFileLogger.log("stop: Soniox async failed, using RT result")
+            }
+        }
+
         // Combine confirmed segments + any trailing unconfirmed partial.
         let effectiveText = currentTranscript.displayText
         currentConfig = nil
@@ -537,7 +580,26 @@ actor RecognitionSession {
             if let earlyTask = earlyLLMTask {
                 state = .postProcessing
                 DebugFileLogger.log("stop: awaiting early LLM result +\(ContinuousClock.now - stopT0)")
-                let earlyResult = await earlyTask.value
+
+                // Timeout: don't wait more than 15s for LLM
+                let earlyResult: String? = await withCheckedContinuation { continuation in
+                    let finished = OSAllocatedUnfairLock(initialState: false)
+                    Task {
+                        let result = await earlyTask.value
+                        if finished.withLock({ let old = $0; $0 = true; return !old }) {
+                            continuation.resume(returning: result)
+                        }
+                    }
+                    Task {
+                        try? await Task.sleep(for: .seconds(15))
+                        if finished.withLock({ let old = $0; $0 = true; return !old }) {
+                            earlyTask.cancel()
+                            DebugFileLogger.log("stop: early LLM timeout after 15s, falling back to raw text")
+                            continuation.resume(returning: nil)
+                        }
+                    }
+                }
+
                 if let result = earlyResult, !result.isEmpty {
                     DebugFileLogger.log("stop: early LLM result received \(result.count) chars +\(ContinuousClock.now - stopT0)")
                     processedText = result
@@ -554,23 +616,44 @@ actor RecognitionSession {
                 state = .postProcessing
                 if let llmConfig = KeychainService.loadLLMConfig() {
                     DebugFileLogger.log("stop: sync LLM firing mode=\(currentMode.name) model=\(llmConfig.model) with \(finalText.count) chars")
-                    do {
-                        let client = currentLLMClient()
-                        let result = try await client.process(
-                            text: finalText, prompt: promptContext.expandContextVariables(currentMode.prompt), config: llmConfig
-                        )
-                        if result.isEmpty {
-                            DebugFileLogger.log("stop: sync LLM empty result, falling back to raw text")
-                            llmFailed = true
-                            onASREvent?(.processingResult(text: rawText))
-                        } else {
-                            processedText = result
-                            finalText = result
-                            onASREvent?(.processingResult(text: result))
+                    let client = currentLLMClient()
+                    let prompt = promptContext.expandContextVariables(currentMode.prompt)
+                    let textForLLM = finalText
+
+                    let llmResult: String? = await withCheckedContinuation { continuation in
+                        let finished = OSAllocatedUnfairLock(initialState: false)
+                        let llmTask = Task {
+                            do {
+                                let result = try await client.process(
+                                    text: textForLLM, prompt: prompt, config: llmConfig
+                                )
+                                return result.isEmpty ? nil : result
+                            } catch {
+                                DebugFileLogger.log("stop: sync LLM FAILED: \(error)")
+                                return nil as String?
+                            }
                         }
-                    } catch {
-                        logger.error("LLM failed: \(error)")
-                        DebugFileLogger.log("stop: sync LLM FAILED, falling back to raw text: \(error)")
+                        Task {
+                            let result = await llmTask.value
+                            if finished.withLock({ let old = $0; $0 = true; return !old }) {
+                                continuation.resume(returning: result)
+                            }
+                        }
+                        Task {
+                            try? await Task.sleep(for: .seconds(15))
+                            if finished.withLock({ let old = $0; $0 = true; return !old }) {
+                                llmTask.cancel()
+                                DebugFileLogger.log("stop: sync LLM timeout after 15s, falling back to raw text")
+                                continuation.resume(returning: nil)
+                            }
+                        }
+                    }
+
+                    if let result = llmResult {
+                        processedText = result
+                        finalText = result
+                        onASREvent?(.processingResult(text: result))
+                    } else {
                         llmFailed = true
                         onASREvent?(.processingResult(text: rawText))
                     }
@@ -587,15 +670,25 @@ actor RecognitionSession {
                 ? defaults.bool(forKey: "tf_preserveClipboard")
                 : true
 
-            let injectionOutcome: InjectionOutcome
-            if injectionAborted {
-                // ESC abort: still copy to clipboard for manual paste, skip injection
-                injectionEngine.copyToClipboard(finalText)
-                DebugFileLogger.log("stop: injection aborted by ESC, text saved to clipboard & history")
-                injectionOutcome = .copiedToClipboard
-            } else {
-                DebugFileLogger.log("stop: injecting method=clipboard text=[\(finalText.prefix(50))] len=\(finalText.count) +\(ContinuousClock.now - stopT0)")
-                injectionOutcome = injectionEngine.inject(finalText)
+            // Run injection on a detached task to avoid blocking the actor with usleep().
+            // The actor yields cooperatively via withCheckedContinuation; .finalized is
+            // still emitted only after injection completes, preserving ordering.
+            let engine = injectionEngine
+            let aborted = injectionAborted
+            let injectLog = "stop: injecting method=clipboard text=[\(finalText.prefix(50))] len=\(finalText.count) +\(ContinuousClock.now - stopT0)"
+            let injectionOutcome: InjectionOutcome = await withCheckedContinuation { continuation in
+                Task.detached {
+                    let outcome: InjectionOutcome
+                    if aborted {
+                        engine.copyToClipboard(finalText)
+                        DebugFileLogger.log("stop: injection aborted by ESC, text saved to clipboard & history")
+                        outcome = .copiedToClipboard
+                    } else {
+                        DebugFileLogger.log(injectLog)
+                        outcome = engine.inject(finalText)
+                    }
+                    continuation.resume(returning: outcome)
+                }
             }
             onASREvent?(.finalized(text: finalText, injection: injectionOutcome))
 
@@ -704,6 +797,42 @@ actor RecognitionSession {
         case .processingResult, .finalized:
             break
         }
+    }
+
+    // MARK: - Soniox punctuation helpers
+
+    private static let sonioxPunctuationPrompt = """
+    为以下语音识别文本添加标点符号并修正空格。规则:
+    1. 根据语义添加合适的标点
+    2. 去掉中文之间不必要的空格，中英文之间保留一个空格
+    3. 不改任何文字内容
+    4. 直接返回结果
+    {text}
+    """
+
+    private static let chinesePunctuationSet: Set<Character> = [
+        "\u{3002}", "\u{FF0C}", "\u{3001}", "\u{FF1B}", "\u{FF1A}",  // 。，、；：
+        "\u{FF01}", "\u{FF1F}", "\u{2026}", "\u{2014}", "\u{00B7}",  // ！？…—·
+        "\u{201C}", "\u{201D}", "\u{2018}", "\u{2019}",              // ""''
+        "\u{FF08}", "\u{FF09}", "\u{3010}", "\u{3011}",              // （）【】
+        "\u{300A}", "\u{300B}",                                       // 《》
+    ]
+
+    private static func stripChinesePunctuation(_ text: String) -> String {
+        var result = ""
+        var skipSpaces = false
+        for char in text {
+            if chinesePunctuationSet.contains(char) {
+                skipSpaces = true
+                continue
+            }
+            if skipSpaces && char == " " {
+                continue
+            }
+            skipSpaces = false
+            result.append(char)
+        }
+        return result
     }
 
     // MARK: - Internal helpers

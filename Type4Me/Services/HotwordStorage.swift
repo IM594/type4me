@@ -9,6 +9,12 @@ import AppKit
 /// Both are merged at runtime (deduplicated, case-insensitive).
 enum HotwordStorage {
 
+    // MARK: - In-memory caches
+
+    private static let cacheLock = NSLock()
+    private static var cachedBuiltin: [String]?   // guarded by cacheLock
+    private static var cachedUser: [String]?       // guarded by cacheLock
+
     // MARK: - File paths
 
     private static var appSupportDir: URL {
@@ -22,7 +28,11 @@ enum HotwordStorage {
     /// User hotwords file (managed by Settings UI)
     static var userFileURL: URL { appSupportDir.appendingPathComponent("hotwords.json") }
 
-    // MARK: - Default hotwords (used for initial seeding)
+    // MARK: - Default hotwords (code-defined baseline)
+
+    /// Version string for the built-in hotword list. Bump this when adding/removing defaults
+    /// so the cloud boosting table gets updated on next app launch.
+    static let builtinVersion = "2026.03.31"
 
     /// Common tech terms that ASR engines frequently mis-transcribe.
     /// Focused on AI/dev terms that benefit from hotword boosting.
@@ -100,22 +110,40 @@ enum HotwordStorage {
     // MARK: - User file (Settings UI)
 
     static func load() -> [String] {
-        return readFile(userFileURL)
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let cached = cachedUser { return cached }
+        let result = readFile(userFileURL)
+        cachedUser = result
+        return result
     }
 
     static func save(_ words: [String]) {
         writeFile(words, to: userFileURL)
+        cacheLock.lock()
+        cachedUser = nil
+        cacheLock.unlock()
         SenseVoiceServerManager.syncHotwordsAndRestart()
+        // Sync to Volcengine cloud table if configured
+        VolcHotwordSyncManager.syncAfterEdit()
     }
 
     // MARK: - Built-in file (Finder editable)
 
     static func loadBuiltin() -> [String] {
-        return readFile(builtinFileURL)
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let cached = cachedBuiltin { return cached }
+        let result = readFile(builtinFileURL)
+        cachedBuiltin = result
+        return result
     }
 
     static func saveBuiltin(_ words: [String]) {
         writeFile(words, to: builtinFileURL)
+        cacheLock.lock()
+        cachedBuiltin = nil
+        cacheLock.unlock()
         SenseVoiceServerManager.syncHotwordsAndRestart()
     }
 
@@ -149,6 +177,22 @@ enum HotwordStorage {
             }
         }
         return result
+    }
+
+    // MARK: - Cloud-compatible words
+
+    /// Returns merged (builtin + user) words filtered for Volcengine cloud table compatibility.
+    /// Removes words with special symbols (only letters, digits, spaces, CJK allowed), max 10 chars.
+    static func loadCloudCompatible() -> [String] {
+        let all = loadEffective()
+        return all.filter { word in
+            let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed.count <= 10 else { return false }
+            // Only allow: letters, digits, spaces, CJK
+            return trimmed.allSatisfy { ch in
+                ch.isLetter || ch.isNumber || ch.isWhitespace || ch.isCJKUnifiedIdeograph
+            }
+        }
     }
 
     // MARK: - Finder

@@ -37,9 +37,11 @@ enum SoundFeedback {
         let delivery: Delivery
     }
 
-    nonisolated(unsafe) private static var hasWarmedUp = false
-    nonisolated(unsafe) private static var cachedPlayers: [String: AVAudioPlayer] = [:]
-    nonisolated(unsafe) private static var activeProcesses: [Process] = []
+    /// All mutable state is accessed exclusively on this serial queue.
+    private static let soundQueue = DispatchQueue(label: "com.type4me.sound")
+    private static var hasWarmedUp = false  // guarded by soundQueue
+    private static var cachedPlayers: [String: AVAudioPlayer] = [:]  // guarded by soundQueue
+    private static var activeProcesses: [Process] = []  // guarded by soundQueue
 
     private static let startSpec = ToneSpec(
         tones: [
@@ -74,7 +76,7 @@ enum SoundFeedback {
     // MARK: - Public API
 
     static func warmUp() {
-        DispatchQueue.main.async {
+        soundQueue.async {
             guard !hasWarmedUp else { return }
             hasWarmedUp = true
             NSLog("[SoundFeedback] warmUp")
@@ -165,7 +167,7 @@ enum SoundFeedback {
     }
 
     private static func playBundled(style: StartSoundStyle) {
-        DispatchQueue.main.async {
+        soundQueue.async {
             guard let url = bundledSoundURL(for: style) else {
                 NSLog("[SoundFeedback] bundled sound not found for %@, falling back to chime", style.rawValue)
                 play(spec: startSpec, retryCount: 0)
@@ -187,7 +189,7 @@ enum SoundFeedback {
 
     /// Play a bundled end sound (keyboard-end) for stop feedback.
     private static func playBundledEnd(filename: String) {
-        DispatchQueue.main.async {
+        soundQueue.async {
             // Look in app bundle Resources/Sounds
             guard let url = Bundle.main.url(forResource: filename, withExtension: "wav", subdirectory: "Sounds") ?? {
                 // Fallback: look in Application Support
@@ -232,7 +234,7 @@ enum SoundFeedback {
         retryCount: Int = 0,
         forcedVolume: Float? = nil
     ) {
-        DispatchQueue.main.async {
+        soundQueue.async {
             do {
                 let didPlay: Bool
                 switch spec.delivery {
@@ -248,7 +250,7 @@ enum SoundFeedback {
                     if retryCount > 0 {
                         NSLog("[SoundFeedback] %@ retry scheduled (%d left)", spec.label, retryCount)
                         DebugFileLogger.log("sound \(spec.label) retry scheduled, remaining=\(retryCount)")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                        soundQueue.asyncAfter(deadline: .now() + 0.12) {
                             play(spec: spec, retryCount: retryCount - 1, forcedVolume: forcedVolume)
                         }
                     } else {
@@ -301,7 +303,7 @@ enum SoundFeedback {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
         process.arguments = [try soundFileURL(for: spec).path]
         process.terminationHandler = { finished in
-            DispatchQueue.main.async {
+            soundQueue.async {
                 activeProcesses.removeAll { $0 === finished }
                 DebugFileLogger.log("sound \(spec.label) afplay terminated status=\(finished.terminationStatus)")
             }

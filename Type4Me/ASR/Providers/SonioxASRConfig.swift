@@ -13,20 +13,11 @@ struct SonioxASRConfig: ASRProviderConfig, Sendable {
     static var credentialFields: [CredentialField] {[
         CredentialField(
             key: "apiKey",
-            label: "API Key",
+            label: L("API Key (默认 \(defaultModel))", "API Key (uses \(defaultModel))"),
             placeholder: L("粘贴 API Key", "Paste your API Key"),
             isSecure: true,
             isOptional: false,
             defaultValue: ""
-        ),
-        CredentialField(
-            key: "model",
-            label: L("Streaming Model", "Streaming Model"),
-            placeholder: defaultModel,
-            isSecure: false,
-            isOptional: false,
-            defaultValue: defaultModel,
-            options: supportedModels.map { FieldOption(value: $0, label: $0) }
         ),
     ]}
 

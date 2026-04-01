@@ -5,12 +5,17 @@ import os
 
 /// Manages system output volume: save, lower, and restore.
 /// Uses CoreAudio directly — no private APIs.
+/// All CoreAudio work runs on a dedicated background queue to avoid blocking
+/// the caller (Bluetooth audio devices can stall AudioObject*PropertyData for seconds).
 enum SystemVolumeManager {
 
     private static let logger = Logger(subsystem: "com.type4me.volume", category: "SystemVolumeManager")
 
-    /// The volume level saved before lowering.
-    private static var savedVolume: Float?
+    /// Dedicated serial queue for CoreAudio property access.
+    private static let queue = DispatchQueue(label: "com.type4me.volume.coreaudio", qos: .userInitiated)
+
+    /// The volume level saved before lowering, protected for cross-thread access.
+    private static let savedVolume = OSAllocatedUnfairLock<Float?>(initialState: nil)
 
     /// UserDefaults key for crash recovery.
     private static let savedVolumeKey = "tf_savedSystemVolume"
@@ -19,32 +24,40 @@ enum SystemVolumeManager {
     /// Saves the current volume so it can be restored later.
     /// - Parameter fraction: Target fraction (e.g. 0.2 = 20% of current volume).
     static func lower(to fraction: Float) {
-        guard let deviceID = defaultOutputDevice() else { return }
-        guard let current = getVolume(device: deviceID) else { return }
+        queue.async {
+            guard let deviceID = defaultOutputDevice() else { return }
+            guard let current = getVolume(device: deviceID) else { return }
 
-        // Don't lower if already very quiet
-        guard current > 0.05 else { return }
+            // Don't lower if already very quiet
+            guard current > 0.05 else { return }
 
-        savedVolume = current
-        UserDefaults.standard.set(current, forKey: savedVolumeKey)
-        let target = current * max(0, min(1, fraction))
-        setVolume(device: deviceID, volume: target)
-        logger.info("Volume lowered: \(current, format: .fixed(precision: 2)) → \(target, format: .fixed(precision: 2))")
+            savedVolume.withLock { $0 = current }
+            UserDefaults.standard.set(current, forKey: savedVolumeKey)
+            let target = current * max(0, min(1, fraction))
+            setVolume(device: deviceID, volume: target)
+            logger.info("Volume lowered: \(current, format: .fixed(precision: 2)) → \(target, format: .fixed(precision: 2))")
+        }
     }
 
     /// Restore volume to the level saved before lowering.
     static func restore() {
-        guard let saved = savedVolume else { return }
-        savedVolume = nil
-        UserDefaults.standard.removeObject(forKey: savedVolumeKey)
+        queue.async {
+            let saved: Float? = savedVolume.withLock { value in
+                let v = value
+                value = nil
+                return v
+            }
+            guard let saved else { return }
+            UserDefaults.standard.removeObject(forKey: savedVolumeKey)
 
-        guard let deviceID = defaultOutputDevice() else { return }
-        setVolume(device: deviceID, volume: saved)
-        logger.info("Volume restored: \(saved, format: .fixed(precision: 2))")
+            guard let deviceID = defaultOutputDevice() else { return }
+            setVolume(device: deviceID, volume: saved)
+            logger.info("Volume restored: \(saved, format: .fixed(precision: 2))")
+        }
     }
 
     /// Restore volume from a previous session if the app crashed while volume was lowered.
-    /// Call once at app launch.
+    /// Call once at app launch. Runs synchronously — safe because it's before UI shows.
     static func restoreIfNeeded() {
         let saved = UserDefaults.standard.float(forKey: savedVolumeKey)
         guard saved > 0 else { return }

@@ -272,10 +272,9 @@ struct ProcessingMode: Codable, Identifiable, Equatable, Hashable {
 
 // MARK: - Audio Level (isolated from @Observable to avoid high-frequency view invalidation)
 
-@MainActor
-final class AudioLevelMeter {
-    /// Current mic level. Updated at audio-callback rate but NOT observed by SwiftUI,
-    /// so it won't trigger view-tree diffs. Views read it inside Canvas/TimelineView draws.
+final class AudioLevelMeter: @unchecked Sendable {
+    /// Current mic level. Written from audio callback thread, read from Canvas/TimelineView.
+    /// Float writes are atomic on arm64. Not observed by SwiftUI (no view invalidation).
     var current: Float = 0.0
 }
 

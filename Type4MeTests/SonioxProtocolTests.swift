@@ -35,23 +35,21 @@ final class SonioxProtocolTests: XCTestCase {
         XCTAssertEqual(payload["num_channels"] as? Int, 1)
         XCTAssertEqual(payload["enable_endpoint_detection"] as? Bool, true)
 
+        // Language hints
+        let hints = try XCTUnwrap(payload["language_hints"] as? [String])
+        XCTAssertEqual(hints, ["zh", "en"])
+        XCTAssertEqual(payload["language_hints_strict"] as? Bool, true)
+
+        // Context: general + terms
         let context = try XCTUnwrap(payload["context"] as? [String: Any])
+        let general = try XCTUnwrap(context["general"] as? [[String: String]])
+        XCTAssertTrue(general.contains { $0["key"] == "domain" })
         let terms = try XCTUnwrap(context["terms"] as? [String])
         XCTAssertEqual(terms, ["Type4Me", "soniox"])
     }
 
-    func testFinalizeMessage_canIncludeTrailingSilence() throws {
-        let message = SonioxProtocol.finalizeMessage(trailingSilenceMs: 300)
-        let payload = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
-        )
-
-        XCTAssertEqual(payload["type"] as? String, "finalize")
-        XCTAssertEqual(payload["trailing_silence_ms"] as? Int, 300)
-    }
-
-    func testParseServerEvent_buildsTranscriptUpdateAndIgnoresMarkers() throws {
-        let message = """
+    func testParseServerMessage_buildsTranscriptUpdateAndIgnoresMarkers() throws {
+        let json = """
         {
           "tokens": [
             { "text": "Hello", "is_final": true },
@@ -67,17 +65,16 @@ final class SonioxProtocolTests: XCTestCase {
         }
         """
 
-        let event = try XCTUnwrap(SonioxProtocol.parseServerEvent(from: Data(message.utf8)))
-        guard case .transcript(let update) = event else {
-            return XCTFail("Expected transcript event")
-        }
+        let result = try SonioxProtocol.parseServerMessage(from: Data(json.utf8))
 
-        XCTAssertEqual(update.finalizedText, "Hello world")
-        XCTAssertEqual(update.partialText, " again")
+        XCTAssertEqual(result.transcript?.finalizedText, "Hello world")
+        XCTAssertEqual(result.transcript?.partialText, " again")
+        XCTAssertFalse(result.isFinished)
+        XCTAssertNil(result.error)
     }
 
-    func testParseServerEvent_parsesFinishedResponse() throws {
-        let message = """
+    func testParseServerMessage_parsesFinishedResponse() throws {
+        let json = """
         {
           "tokens": [],
           "final_audio_proc_ms": 1560,
@@ -86,12 +83,15 @@ final class SonioxProtocolTests: XCTestCase {
         }
         """
 
-        let event = try XCTUnwrap(SonioxProtocol.parseServerEvent(from: Data(message.utf8)))
-        XCTAssertEqual(event, .finished)
+        let result = try SonioxProtocol.parseServerMessage(from: Data(json.utf8))
+
+        XCTAssertNil(result.transcript)
+        XCTAssertTrue(result.isFinished)
+        XCTAssertNil(result.error)
     }
 
-    func testParseServerEvent_prefersTranscriptOverFinishedWhenFinalTokensPresent() throws {
-        let message = """
+    func testParseServerMessage_returnsTranscriptAndFinishedTogether() throws {
+        let json = """
         {
           "tokens": [
             { "text": "done", "is_final": true }
@@ -100,12 +100,16 @@ final class SonioxProtocolTests: XCTestCase {
         }
         """
 
-        let event = try XCTUnwrap(SonioxProtocol.parseServerEvent(from: Data(message.utf8)))
-        XCTAssertEqual(event, .transcript(.init(finalizedText: "done", partialText: "")))
+        let result = try SonioxProtocol.parseServerMessage(from: Data(json.utf8))
+
+        XCTAssertEqual(result.transcript?.finalizedText, "done")
+        XCTAssertEqual(result.transcript?.partialText, "")
+        XCTAssertTrue(result.isFinished)
+        XCTAssertNil(result.error)
     }
 
-    func testParseServerEvent_parsesErrorResponse() throws {
-        let message = """
+    func testParseServerMessage_parsesErrorResponse() throws {
+        let json = """
         {
           "tokens": [],
           "error_code": 401,
@@ -113,13 +117,16 @@ final class SonioxProtocolTests: XCTestCase {
         }
         """
 
-        let event = try XCTUnwrap(SonioxProtocol.parseServerEvent(from: Data(message.utf8)))
-        XCTAssertEqual(event, .error(code: 401, message: "Invalid API key."))
+        let result = try SonioxProtocol.parseServerMessage(from: Data(json.utf8))
+
+        XCTAssertNil(result.transcript)
+        XCTAssertFalse(result.isFinished)
+        XCTAssertEqual(result.error, SonioxServerError(code: 401, message: "Invalid API key."))
     }
 
-    func testParseServerEvent_throwsForInvalidJSON() {
+    func testParseServerMessage_throwsForInvalidJSON() {
         XCTAssertThrowsError(
-            try SonioxProtocol.parseServerEvent(from: Data("{".utf8))
+            try SonioxProtocol.parseServerMessage(from: Data("{".utf8))
         )
     }
 }

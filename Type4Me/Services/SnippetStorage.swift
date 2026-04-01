@@ -1,4 +1,5 @@
 import Foundation
+import os
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -8,6 +9,12 @@ import AppKit
 /// - **User file** (`snippets.json`): managed by Settings UI, auto-loaded on save
 /// Both are merged at runtime; user entries override built-in on trigger conflict.
 enum SnippetStorage {
+
+    // MARK: - In-memory caches
+
+    private static let fileCacheLock = NSLock()
+    private static var cachedBuiltin: [(trigger: String, value: String)]?  // guarded by fileCacheLock
+    private static var cachedUser: [(trigger: String, value: String)]?     // guarded by fileCacheLock
 
     // MARK: - File paths
 
@@ -233,7 +240,12 @@ enum SnippetStorage {
     // MARK: - User file (Settings UI)
 
     static func load() -> [(trigger: String, value: String)] {
-        return readFile(userFileURL)
+        fileCacheLock.lock()
+        defer { fileCacheLock.unlock() }
+        if let cached = cachedUser { return cached }
+        let result = readFile(userFileURL)
+        cachedUser = result
+        return result
     }
 
     static func save(_ snippets: [(trigger: String, value: String)]) {
@@ -244,7 +256,12 @@ enum SnippetStorage {
     // MARK: - Built-in file (Finder editable)
 
     static func loadBuiltin() -> [(trigger: String, value: String)] {
-        return readFile(builtinFileURL)
+        fileCacheLock.lock()
+        defer { fileCacheLock.unlock() }
+        if let cached = cachedBuiltin { return cached }
+        let result = readFile(builtinFileURL)
+        cachedBuiltin = result
+        return result
     }
 
     static func saveBuiltin(_ snippets: [(trigger: String, value: String)]) {
@@ -273,16 +290,20 @@ enum SnippetStorage {
         let template: String  // pre-escaped replacement
     }
 
-    /// Cached compiled rules. Rebuilt only when snippets change.
-    private static var cachedRules: [CompiledRule]?
+    /// Thread-safe compiled rules cache. Rebuilt only when snippets change.
+    private static let cacheLock = OSAllocatedUnfairLock(initialState: [CompiledRule]?(nil))
 
     /// Call after saving either file to force recompilation on next apply.
     static func invalidateCache() {
-        cachedRules = nil
+        cacheLock.withLock { $0 = nil }
+        fileCacheLock.lock()
+        cachedBuiltin = nil
+        cachedUser = nil
+        fileCacheLock.unlock()
     }
 
     private static func compiledRules() -> [CompiledRule] {
-        if let cached = cachedRules { return cached }
+        if let cached = cacheLock.withLock({ $0 }) { return cached }
         let builtinSnippets = loadBuiltin()
         let userSnippets = load()
         let userTriggers = Set(userSnippets.map { $0.trigger.lowercased() })
@@ -294,7 +315,7 @@ enum SnippetStorage {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
             return CompiledRule(regex: regex, template: NSRegularExpression.escapedTemplate(for: snippet.value))
         }
-        cachedRules = rules
+        cacheLock.withLock { $0 = rules }
         return rules
     }
 

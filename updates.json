@@ -1,6 +1,11 @@
 {
-  "latest": "1.6.1",
+  "latest": "1.6.2",
   "releases": [
+    {
+      "version": "1.6.2",
+      "date": "2026-04-01",
+      "notes": "- Soniox 客户端重构：去掉 ConnectionGate，简化连接流程\n- Soniox 异步校准：录音结束后用完整音频做二次校准，提升准确率\n- Soniox 协议优化：支持 language_hints (zh/en) + endpoint detection\n- 火山引擎热词逻辑优化：有云端词表时跳过 inline hotwords 避免冲突\n- 并发安全修复：KeychainService/SnippetStorage/HotwordStorage 加缓存，SystemVolumeManager 移到后台队列\n- PromptContext.capture() 改为 async 防 AX 死锁\n- 热词存储新增版本号和云端兼容过滤"
+    },
     {
       "version": "1.6.1",
       "date": "2026-03-31",
