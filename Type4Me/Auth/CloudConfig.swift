@@ -9,8 +9,9 @@ enum CloudRegion: String, Codable {
 
 enum CloudConfig {
     // API endpoints
-    static let cnAPIEndpoint = "https://cn.api.type4me.com"
-    static let usAPIEndpoint = "https://us.api.type4me.com"
+    // TODO: switch to domain names before release (cn.api.type4me.com / us.api.type4me.com)
+    static let cnAPIEndpoint = "http://115.190.217.85"
+    static let usAPIEndpoint = "http://115.190.217.85"
 
     // Pricing display
     static let weeklyPriceCN = "¥7"

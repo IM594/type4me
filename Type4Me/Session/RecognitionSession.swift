@@ -478,7 +478,7 @@ actor RecognitionSession {
             // Always try to drain events — even if endAudio failed, the server
             // may have already queued transcript events before the connection broke.
             if let evtTask = eventConsumptionTask {
-                let drainTimeout: Duration = providerIsStreaming ? .seconds(2) : .seconds(5)
+                let drainTimeout: Duration = providerIsStreaming ? .seconds(5) : .seconds(5)
                 let drained = await withTimeout(drainTimeout) {
                     await evtTask.value
                 }
@@ -543,12 +543,18 @@ actor RecognitionSession {
             return
         }
 
-        // Batch fallback: if streaming broke mid-session, always retry with
-        // the full local recording to get complete text, even if we have partial.
-        let streamingFailed = uploadFailureFlag?.failed == true || !asrTeardownClean
-        if streamingFailed {
+        // Batch fallback: only when the server is truly missing audio (upload failed).
+        // If upload was fine but drain timed out, the server already has all audio;
+        // use whatever streaming produced rather than re-sending everything.
+        let uploadFailed = uploadFailureFlag?.failed == true
+        let hasUsableStreamingResult = !currentTranscript.confirmedSegments.isEmpty
+        let needsBatchFallback = uploadFailed || (!asrTeardownClean && !hasUsableStreamingResult)
+        if !asrTeardownClean && !uploadFailed && hasUsableStreamingResult {
+            DebugFileLogger.log("stop: drain timeout but streaming has confirmed text, skipping batch fallback")
+        }
+        if needsBatchFallback {
             let partialText = currentTranscript.composedText
-            DebugFileLogger.log("stop: streaming failed (partial=\(partialText.count) chars), attempting batch fallback")
+            DebugFileLogger.log("stop: streaming failed (partial=\(partialText.count) chars, uploadFailed=\(uploadFailed)), attempting batch fallback")
             let fullAudio = audioEngine.getRecordedAudio()
             if !fullAudio.isEmpty, let config = currentConfig {
                 onASREvent?(.processingResult(text: partialText.isEmpty ? "重新识别中..." : partialText))
@@ -693,6 +699,8 @@ actor RecognitionSession {
                 }
             }
 
+            finalText = finalText.removingCJKLatinSpaces
+
             state = .injecting
             let defaults = UserDefaults.standard
             injectionEngine.preserveClipboard = defaults.object(forKey: "tf_preserveClipboard") != nil
@@ -721,9 +729,9 @@ actor RecognitionSession {
             }
             onASREvent?(.finalized(text: finalText, injection: injectionOutcome))
 
-            // Cloud quota: deduct chars locally for responsive UI feedback
+            // Cloud quota: refresh from server after LLM completes
             if isCloudMode {
-                await CloudQuotaManager.shared.deductLocal(chars: finalText.count)
+                await CloudQuotaManager.shared.refresh(force: true)
             }
 
             // Save to history
@@ -732,7 +740,7 @@ actor RecognitionSession {
             let status: String
             if injectionAborted { status = "aborted" }
             else if llmFailed { status = "llm_error" }
-            else if streamingFailed { status = "stream_recovered" }
+            else if needsBatchFallback { status = "stream_recovered" }
             else { status = "completed" }
             await historyStore.insert(HistoryRecord(
                 id: recordId,
@@ -755,7 +763,7 @@ actor RecognitionSession {
             let duration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
             if duration > 1.0 {
                 // Only save if recording lasted more than 1 second (skip accidental taps)
-                let status = streamingFailed ? "stream_failed" : "empty"
+                let status = needsBatchFallback ? "stream_failed" : "empty"
                 await historyStore.insert(HistoryRecord(
                     id: UUID().uuidString,
                     createdAt: Date(),
@@ -1044,19 +1052,53 @@ actor RecognitionSession {
 
     // MARK: - Batch Fallback
 
-    /// Try to transcribe full audio via the same provider in a fresh connection.
+    /// Try to transcribe full audio via the same provider.
+    /// Soniox uses its async REST API (faster for complete audio); others use a fresh streaming connection.
     private func attemptBatchFallback(audio: Data, config: any ASRProviderConfig) async -> String? {
         let provider = activeProvider
+
+        // Soniox: use async REST API instead of re-streaming
+        if provider == .soniox, let sonioxConfig = config as? SonioxASRConfig {
+            let bypass = ProxyBypassMode.current.bypassASR
+            let hotwords = HotwordStorage.loadEffective()
+            let apiKey = sonioxConfig.apiKey
+            DebugFileLogger.log("batch fallback: using Soniox async API (\(audio.count) bytes)")
+            let resultTask = Task.detached {
+                await SonioxAsyncClient.transcribe(
+                    audioData: audio,
+                    apiKey: apiKey,
+                    hotwords: hotwords,
+                    bypassProxy: bypass
+                )
+            }
+            return await withCheckedContinuation { continuation in
+                let finished = OSAllocatedUnfairLock(initialState: false)
+                Task.detached {
+                    let result = await resultTask.value
+                    if finished.withLock({ let old = $0; $0 = true; return !old }) {
+                        continuation.resume(returning: result?.text)
+                    }
+                }
+                Task.detached {
+                    try? await Task.sleep(for: .seconds(30))
+                    if finished.withLock({ let old = $0; $0 = true; return !old }) {
+                        resultTask.cancel()
+                        DebugFileLogger.log("batch fallback (async) timeout after 30s")
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
+
+        // Other providers: fresh streaming connection with all audio at once
         let resultTask = Task.detached { () -> String? in
             guard let client = ASRProviderRegistry.createClient(for: provider) else { return nil }
             do {
                 let options = ASRRequestOptions(enablePunc: true)
                 try await client.connect(config: config, options: options)
-                // Send all audio at once, then signal end
                 try await client.sendAudio(audio)
                 try await client.endAudio()
 
-                // Wait for final transcript
                 let events = await client.events
                 for await event in events {
                     switch event {
@@ -1144,5 +1186,19 @@ private extension String {
     /// LLMs sometimes insert extra spaces between CJK and Latin text.
     var collapsingExtraSpaces: String {
         replacingOccurrences(of: " {2,}", with: " ", options: .regularExpression)
+    }
+
+    /// Remove spaces at CJK ↔ Latin/digit boundaries.
+    /// Both ASR engines and LLMs tend to insert spaces between Chinese and
+    /// English text; this strips them while keeping inter-word English spaces.
+    var removingCJKLatinSpaces: String {
+        let cjk = "[\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF]"
+        let latin = "[A-Za-z0-9]"
+        var s = self
+        // CJK + space + Latin:  "中 E" → "中E"
+        s = s.replacingOccurrences(of: "(\(cjk)) (\(latin))", with: "$1$2", options: .regularExpression)
+        // Latin + space + CJK:  "E 中" → "E中"
+        s = s.replacingOccurrences(of: "(\(latin)) (\(cjk))", with: "$1$2", options: .regularExpression)
+        return s
     }
 }

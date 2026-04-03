@@ -7,12 +7,16 @@ struct SetupWizardView: View {
     @Environment(AppState.self) private var appState
     @State private var step = 0
     @AppStorage("tf_language") private var language = AppLanguage.systemDefault
+    @AppStorage("tf_use_cloud") private var useCloud = false
+
+    /// Cloud path skips mode demos and provider config: welcome → path → permissions → ready
+    private var totalSteps: Int { useCloud ? 4 : 7 }
 
     var body: some View {
         VStack(spacing: 0) {
             // Progress indicator
             HStack(spacing: 8) {
-                ForEach(0..<6, id: \.self) { i in
+                ForEach(0..<totalSteps, id: \.self) { i in
                     Capsule()
                         .fill(i <= step ? TF.amber : Color.secondary.opacity(0.15))
                         .frame(height: 3)
@@ -25,21 +29,10 @@ struct SetupWizardView: View {
 
             // Steps
             Group {
-                switch step {
-                case 0: welcomeStep
-                case 1:
-                    VStack(spacing: 0) {
-                        QuickModeDemoStep()
-                        navigationFooter { step = 2 }
-                    }
-                case 2:
-                    VStack(spacing: 0) {
-                        CustomModeDemoStep()
-                        navigationFooter { step = 3 }
-                    }
-                case 3: permissionsStep
-                case 4: providerStep
-                default: readyStep
+                if useCloud {
+                    cloudStepContent
+                } else {
+                    byokStepContent
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -51,6 +44,41 @@ struct SetupWizardView: View {
         }
         .frame(width: 750, height: 520)
         .id(language)
+    }
+
+    // MARK: - Cloud Path Steps (4 total: welcome, path, permissions, ready)
+
+    @ViewBuilder
+    private var cloudStepContent: some View {
+        switch step {
+        case 0: welcomeStep
+        case 1: pathSelectionStep
+        case 2: permissionsStep
+        default: readyStep
+        }
+    }
+
+    // MARK: - BYOK Path Steps (7 total: welcome, path, quickDemo, customDemo, permissions, provider, ready)
+
+    @ViewBuilder
+    private var byokStepContent: some View {
+        switch step {
+        case 0: welcomeStep
+        case 1: pathSelectionStep
+        case 2:
+            VStack(spacing: 0) {
+                QuickModeDemoStep()
+                navigationFooter { step = 3 }
+            }
+        case 3:
+            VStack(spacing: 0) {
+                CustomModeDemoStep()
+                navigationFooter { step = 4 }
+            }
+        case 4: permissionsStep
+        case 5: providerStep
+        default: readyStep
+        }
     }
 
     // MARK: - Navigation Footer
@@ -100,13 +128,102 @@ struct SetupWizardView: View {
         }
     }
 
-    // MARK: - Step 3: Permissions
+    // MARK: - Step 1: Path Selection
+
+    private var pathSelectionStep: some View {
+        VStack(spacing: 28) {
+            Spacer()
+
+            VStack(spacing: 8) {
+                Text(L("选择你的方式", "Choose your path"))
+                    .font(.system(size: 18, weight: .semibold))
+                Text(L("随时可以在设置里切换。", "You can switch anytime in Settings."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 16) {
+                pathCard(
+                    icon: "cloud.fill",
+                    title: "Type4Me Cloud",
+                    detail: L(
+                        "无需 API Key，免费体验 2000 字",
+                        "No API key needed, 2000 chars free"
+                    ),
+                    isSelected: useCloud
+                ) {
+                    useCloud = true
+                }
+
+                pathCard(
+                    icon: "key.fill",
+                    title: L("自定义 API", "Custom API"),
+                    detail: L(
+                        "使用你自己的 API Key（火山、OpenAI 等）",
+                        "Bring your own API keys (Volcano, OpenAI, etc.)"
+                    ),
+                    isSelected: !useCloud
+                ) {
+                    useCloud = false
+                }
+            }
+            .frame(width: 500)
+
+            Spacer()
+
+            Button(L("下一步", "Next")) { step = 2 }
+                .buttonStyle(.borderedProminent)
+                .tint(TF.amber)
+                .controlSize(.large)
+                .padding(.bottom, 36)
+        }
+    }
+
+    private func pathCard(
+        icon: String,
+        title: String,
+        detail: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 28))
+                    .foregroundStyle(isSelected ? TF.amber : .secondary)
+
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 180)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? TF.amber.opacity(0.08) : Color.secondary.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? TF.amber : .clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Permissions
 
     @State private var hasMic = false
     @State private var hasAccessibility = false
 
     private var permissionsStep: some View {
-        VStack(spacing: 24) {
+        let nextStep = useCloud ? 3 : 5
+        return VStack(spacing: 24) {
             Spacer()
 
             Text(L("授予权限", "Grant Permissions"))
@@ -149,7 +266,7 @@ struct SetupWizardView: View {
 
             Spacer()
 
-            navigationFooter { step = 4 }
+            navigationFooter { step = nextStep }
         }
         .onAppear { refreshPermissions() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -162,7 +279,7 @@ struct SetupWizardView: View {
         hasAccessibility = AXIsProcessTrusted()
     }
 
-    // MARK: - Step 4: Provider + Credentials
+    // MARK: - Provider + Credentials (BYOK only)
 
     @State private var selectedProvider: ASRProvider = .volcano
     @State private var credentialValues: [String: String] = [:]
@@ -244,7 +361,7 @@ struct SetupWizardView: View {
             Spacer()
 
             HStack {
-                Button(L("跳过", "Skip")) { step = 5 }
+                Button(L("跳过", "Skip")) { step = 6 }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -255,7 +372,7 @@ struct SetupWizardView: View {
                         )
                         KeychainService.selectedASRProvider = selectedProvider
                     }
-                    step = 5
+                    step = 6
                 }
                     .buttonStyle(.borderedProminent)
                     .tint(TF.amber)
@@ -265,7 +382,7 @@ struct SetupWizardView: View {
         }
     }
 
-    // MARK: - Step 5: Ready
+    // MARK: - Ready
 
     private var readyStep: some View {
         VStack(spacing: 28) {

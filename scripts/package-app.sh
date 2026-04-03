@@ -134,6 +134,11 @@ cat >"$INFO_PLIST" <<EOF
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>CFBundleURLTypes</key>
