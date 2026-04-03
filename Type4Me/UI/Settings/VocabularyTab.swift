@@ -16,6 +16,9 @@ struct VocabularyTab: View {
     @State private var newValue: String = ""
     @State private var builtinSnippetCount: Int = SnippetStorage.builtinCount()
 
+    // Smart Correction
+    @State private var showSmartCorrection = false
+
     // Sort
     @State private var hotwordSort: VocabSort = .byTime
     @State private var snippetSort: VocabSort = .byTime
@@ -192,6 +195,27 @@ struct VocabularyTab: View {
                 snippetGroupView(group: group)
             }
 
+            // Smart correction button
+            HStack(spacing: 6) {
+                Button {
+                    showSmartCorrection = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 11))
+                        Text(L("智能纠错", "Smart Correction"))
+                            .font(.system(size: 12))
+                    }
+                    .foregroundStyle(TF.settingsAccentBlue)
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+
+            SettingsDivider()
+
             // Add new row
             HStack(spacing: 8) {
                 TextField(L("替换内容", "Replacement"), text: $newValue)
@@ -239,6 +263,14 @@ struct VocabularyTab: View {
                 .padding(.top, 6)
 
             Spacer()
+        }
+        .sheet(isPresented: $showSmartCorrection) {
+            SmartCorrectionSheet {
+                snippets = SnippetStorage.load()
+                hotwords = HotwordStorage.load()
+                builtinSnippetCount = SnippetStorage.builtinCount()
+                builtinHotwordCount = HotwordStorage.builtinCount()
+            }
         }
         .onAppear {
             hotwords = HotwordStorage.load()
