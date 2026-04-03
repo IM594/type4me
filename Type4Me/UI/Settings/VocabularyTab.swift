@@ -52,41 +52,52 @@ struct VocabularyTab: View {
                 .foregroundStyle(TF.settingsTextTertiary)
                 .padding(.bottom, 12)
 
-            // Built-in hotwords info bar
+            // Bulk import file bar
             HStack(spacing: 6) {
-                Image(systemName: "tray.full.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(TF.settingsTextTertiary)
-                Text(L("内置 \(builtinHotwordCount) 条热词",
-                       "\(builtinHotwordCount) built-in hotwords"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(TF.settingsTextTertiary)
-
-                Divider().frame(height: 12)
-
                 Button {
                     HotwordStorage.revealBuiltinInFinder()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "folder")
                             .font(.system(size: 10))
-                        Text(L("在 Finder 中打开", "Reveal in Finder"))
+                        Text(L("批量导入文件", "Bulk Import File"))
                             .font(.system(size: 11))
                     }
                     .foregroundStyle(TF.settingsAccentBlue)
                 }
                 .buttonStyle(.plain)
 
+                if builtinHotwordCount > 0 {
+                    Button {
+                        let imported = HotwordStorage.loadBuiltin()
+                        let existing = Set(hotwords.map { $0.lowercased() })
+                        let newWords = imported.filter { !existing.contains($0.lowercased()) }
+                        if !newWords.isEmpty {
+                            hotwords.append(contentsOf: newWords)
+                            HotwordStorage.save(hotwords)
+                        }
+                        builtinHotwordCount = 0
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.system(size: 10))
+                            Text(L("导入 \(builtinHotwordCount) 条", "Import \(builtinHotwordCount)"))
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(TF.settingsAccentAmber)
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 Button {
                     builtinHotwordCount = HotwordStorage.builtinCount()
-                    SenseVoiceServerManager.syncHotwordsAndRestart()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 10))
                         .foregroundStyle(TF.settingsAccentBlue)
                 }
                 .buttonStyle(.plain)
-                .help(L("重新加载内置文件", "Reload built-in file"))
+                .help(L("刷新导入文件", "Refresh import file"))
 
                 Spacer()
             }
