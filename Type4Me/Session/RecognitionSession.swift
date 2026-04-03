@@ -751,7 +751,8 @@ actor RecognitionSession {
                 processedText: processedText,
                 finalText: finalText,
                 status: status,
-                characterCount: finalText.count
+                characterCount: finalText.count,
+                asrProvider: activeProvider.displayName
             ))
 
             // Note: injectionAborted and llmFailed info is already conveyed
@@ -773,7 +774,8 @@ actor RecognitionSession {
                     processedText: nil,
                     finalText: "",
                     status: status,
-                    characterCount: 0
+                    characterCount: 0,
+                    asrProvider: activeProvider.displayName
                 ))
                 DebugFileLogger.log("stop: no text recognized, saved to history as \(status)")
             }
