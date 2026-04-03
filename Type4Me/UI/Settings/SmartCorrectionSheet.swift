@@ -49,7 +49,7 @@ struct SmartCorrectionSheet: View {
     private var selectedText: String {
         selectedTokens.sorted().compactMap { idx in
             idx < tokens.count ? tokens[idx] : nil
-        }.joined()
+        }.joined(separator: " ")
     }
 
     private var canGenerate: Bool {
@@ -113,6 +113,11 @@ struct SmartCorrectionSheet: View {
         .pickerStyle(.segmented)
         .frame(width: 240)
         .padding(.bottom, 12)
+        .onChange(of: inputMode) { _, _ in
+            tokens = []
+            selectedTokens = []
+            errorMessage = nil
+        }
 
         if inputMode == .manual {
             manualInputView
@@ -131,6 +136,19 @@ struct SmartCorrectionSheet: View {
         if !tokens.isEmpty {
             correctFormView
                 .padding(.top, 12)
+        }
+
+        // Error message from last generation attempt
+        if let errorMessage {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                Text(errorMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(TF.settingsTextSecondary)
+            }
+            .padding(.top, 8)
         }
     }
 
@@ -293,14 +311,6 @@ struct SmartCorrectionSheet: View {
             Text(L("正在生成变体...", "Generating variants..."))
                 .font(.system(size: 13))
                 .foregroundStyle(TF.settingsTextSecondary)
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(TF.settingsAccentRed)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 4)
-            }
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -439,6 +449,7 @@ struct SmartCorrectionSheet: View {
                 Button(L("取消", "Cancel")) { dismiss() }
                     .buttonStyle(.plain)
                     .foregroundStyle(TF.settingsTextTertiary)
+                    .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
@@ -460,6 +471,7 @@ struct SmartCorrectionSheet: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canGenerate)
+                .keyboardShortcut(.defaultAction)
 
             case .generating:
                 Button(L("取消", "Cancel")) {
@@ -486,6 +498,7 @@ struct SmartCorrectionSheet: View {
                 Button(L("取消", "Cancel")) { dismiss() }
                     .buttonStyle(.plain)
                     .foregroundStyle(TF.settingsTextTertiary)
+                    .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
