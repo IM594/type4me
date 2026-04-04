@@ -42,6 +42,17 @@ trap cleanup EXIT
 
 mkdir -p "$DIST_DIR"
 
+# Clean build cache when sherpa-onnx availability doesn't match last build.
+# Package.swift conditionally defines HAS_SHERPA_ONNX based on framework presence,
+# but swift build won't re-evaluate this if source files haven't changed.
+SHERPA_AVAILABLE="no"
+[ -f "$PROJECT_DIR/Frameworks/sherpa-onnx.xcframework/Info.plist" ] && SHERPA_AVAILABLE="yes"
+LAST_SHERPA_STATE="$PROJECT_DIR/.build/.sherpa-state"
+if [ -f "$LAST_SHERPA_STATE" ] && [ "$(cat "$LAST_SHERPA_STATE")" != "${VARIANT}-${SHERPA_AVAILABLE}" ]; then
+    echo "Variant/sherpa state changed, cleaning build cache..."
+    swift package clean 2>/dev/null || true
+fi
+
 # For cloud builds, temporarily hide sherpa-onnx so Package.swift excludes it
 if [ "$VARIANT" = "cloud" ] && [ -f "$PROJECT_DIR/Frameworks/sherpa-onnx.xcframework/Info.plist" ]; then
     echo "Hiding sherpa-onnx framework for cloud build..."
@@ -51,6 +62,10 @@ fi
 
 VARIANT="$VARIANT" ARCH="$ARCH" APP_VERSION="$APP_VERSION" \
     APP_PATH="$STAGING_DIR/${APP_NAME}.app" bash "$SCRIPT_DIR/package-app.sh"
+
+# Record variant/sherpa state for next build's cache invalidation
+mkdir -p "$PROJECT_DIR/.build"
+echo "${VARIANT}-${SHERPA_AVAILABLE}" > "$PROJECT_DIR/.build/.sherpa-state"
 ln -s /Applications "$STAGING_DIR/Applications"
 
 rm -f "$DMG_PATH"

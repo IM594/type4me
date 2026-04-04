@@ -310,6 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             NSLog("[Type4Me] >>> HOTKEY: ESC abort injection (phase=%@)", String(describing: phase))
             DebugFileLogger.log("hotkey ESC abort injection phase=\(phase)")
+            MainActor.assumeIsolated { self.appState.stopRecording() }
             Task {
                 await self.session.abortInjection()
                 await self.session.stopRecording()
