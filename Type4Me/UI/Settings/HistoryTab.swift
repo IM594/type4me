@@ -32,6 +32,9 @@ struct HistoryTab: View {
 
     private static let pageSize = 20
 
+    // Correction
+    @State private var correctionRecord: HistoryRecord? = nil
+
     // Export
     @State private var showExportPopover = false
     @State private var exportRangeAll = true
@@ -188,6 +191,9 @@ struct HistoryTab: View {
                 await loadRecords()
                 await loadStatistics()
             }
+        }
+        .sheet(item: $correctionRecord) { record in
+            QuickCorrectionSheet(text: record.rawText)
         }
     }
 
@@ -415,6 +421,16 @@ struct HistoryTab: View {
             // Actions
             HStack(spacing: 8) {
                 Spacer()
+
+                Button {
+                    correctionRecord = record
+                } label: {
+                    Label(L("纠错", "Correct"), systemImage: "character.textbox")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(TF.settingsAccentAmber)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
 
                 Button {
                     NSPasteboard.general.clearContents()

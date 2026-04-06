@@ -7,7 +7,7 @@ APP_NAME="Type4Me"
 APP_EXECUTABLE="Type4Me"
 APP_ICON_NAME="AppIcon"
 APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.type4me.app}"
-APP_VERSION="${APP_VERSION:-1.7.0}"
+APP_VERSION="${APP_VERSION:-1.8.0}"
 APP_BUILD="${APP_BUILD:-1}"
 MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-14.0}"
 VARIANT="${VARIANT:-cloud}"    # cloud or local
@@ -162,6 +162,7 @@ cp "$PROJECT_DIR/Type4Me/Resources/Sounds/"*.wav "$APP_PATH/Contents/Resources/S
 # --- Models and local ASR server (local variant only) ---
 if [ "$VARIANT" = "local" ]; then
     MODELS_DIR="$APP_PATH/Contents/Resources/Models"
+    rm -rf "$MODELS_DIR"
     mkdir -p "$MODELS_DIR"
 
     # SenseVoice int8 model (~229MB)

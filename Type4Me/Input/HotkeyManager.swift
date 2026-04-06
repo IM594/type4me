@@ -50,7 +50,10 @@ final class HotkeyManager: NSObject {
     var onCrossModeStop: ((UUID) -> Void)?
 
     /// Called when ESC is pressed during active recording or processing (abort).
-    var onESCAbort: (() -> Void)?
+    /// Called when ESC is pressed during active recording or processing (abort).
+    /// Returns true if the abort was handled (ESC should be swallowed),
+    /// false if the app is not actually in an active session (ESC should pass through).
+    var onESCAbort: (() -> Bool)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -248,8 +251,14 @@ final class HotkeyManager: NSObject {
             if shouldAbort {
                 NSLog("[HotkeyManager] ESC pressed, triggering abort (recording=%@, processing=%@)",
                       isRecording ? "true" : "false", isProcessing ? "true" : "false")
-                onESCAbort?()
-                return nil  // Swallow ESC
+                if onESCAbort?() == true {
+                    return nil  // Swallow ESC: abort was handled
+                }
+                // App is not actually in an active session — stale state.
+                // Clean up and let ESC pass through to the system.
+                NSLog("[HotkeyManager] ESC abort not handled, resetting stale state")
+                isProcessing = false
+                resetActiveState()
             }
         }
 

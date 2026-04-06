@@ -63,6 +63,9 @@ actor SenseVoiceASRClient: SpeechRecognizer {
     /// Audio buffer for the current speech segment (used for partial recognition).
     private var speechBuffer: [Float] = []
 
+    /// Accumulated raw PCM audio for Qwen3 final calibration.
+    private var allAudioData = Data()
+
     /// Counter for samples fed to VAD since last partial recognition.
     private var samplesSinceLastPartial: Int = 0
 
@@ -144,6 +147,18 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         set { cacheLock.withLock { _cachedVadModelDir = newValue } }
     }
 
+    /// Release all cached models to free memory (e.g. when switching away from local ASR).
+    static func releaseCachedModels() {
+        cacheLock.withLock {
+            _cachedRecognizer = nil
+            _cachedVAD = nil
+            _cachedPunctProcessor = nil
+            _cachedSenseVoiceModelDir = nil
+            _cachedVadModelDir = nil
+        }
+        NSLog("[SenseVoiceASR] Cached models released")
+    }
+
     /// Pre-load models at app startup for instant first recording.
     static func preloadModels(config: SherpaASRConfig) {
         let svDir = config.senseVoiceModelDir
@@ -212,6 +227,7 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         totalSamplesFed = 0
         samplesSkipped = 0
         speechBuffer = []
+        allAudioData = Data()
         samplesSinceLastPartial = 0
         partialRecognitionInFlight = false
         finalized = false
@@ -319,6 +335,9 @@ actor SenseVoiceASRClient: SpeechRecognizer {
             logger.error("sendAudio called but recognizer/VAD is nil — engine not initialized")
             throw SherpaASRError.recognizerInitFailed
         }
+
+        // Accumulate raw PCM for Qwen3 calibration
+        allAudioData.append(data)
 
         var floatSamples = Self.int16ToFloat32(data)
         totalSamplesFed += floatSamples.count
@@ -458,8 +477,20 @@ actor SenseVoiceASRClient: SpeechRecognizer {
             }
         }
         speechBuffer = []
-
         currentPartialText = ""
+
+        // Qwen3 calibration: if server is running, send full audio for more accurate result
+        let qwen3Enabled = UserDefaults.standard.object(forKey: "tf_qwen3FinalEnabled") as? Bool ?? true
+        if qwen3Enabled, let port = SenseVoiceServerManager.currentQwen3Port, allAudioData.count > 3200 {
+            DebugFileLogger.log("SenseVoice endAudio: Qwen3 calibration starting (\(allAudioData.count) bytes)")
+            if let calibratedText = await qwen3Calibrate(audio: allAudioData, port: port) {
+                confirmedSegments = [calibratedText]
+                DebugFileLogger.log("SenseVoice endAudio: Qwen3 calibration OK (\(calibratedText.count) chars)")
+            } else {
+                DebugFileLogger.log("SenseVoice endAudio: Qwen3 calibration failed, using SenseVoice result")
+            }
+        }
+        allAudioData = Data()
 
         emitTranscript(isFinal: true)
         eventContinuation?.yield(.completed)
@@ -479,6 +510,7 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         confirmedSegments = []
         currentPartialText = ""
         speechBuffer = []
+        allAudioData = Data()
         logger.info("SenseVoiceASR disconnected")
     }
 
@@ -518,6 +550,26 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         )
         DebugFileLogger.log("SenseVoice emit: confirmed=\(confirmedSegments.count) partial=\(currentPartialText.count) composed=\(composedText.count) isFinal=\(isFinal)")
         eventContinuation?.yield(.transcript(transcript))
+    }
+
+    // MARK: - Qwen3 Calibration
+
+    private func qwen3Calibrate(audio: Data, port: Int) async -> String? {
+        let url = URL(string: "http://127.0.0.1:\(port)/transcribe")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.httpBody = audio
+        request.timeoutInterval = 30
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let text = json["text"] as? String, !text.isEmpty else { return nil }
+            return text
+        } catch {
+            logger.error("Qwen3 calibration failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // MARK: - Audio Conversion

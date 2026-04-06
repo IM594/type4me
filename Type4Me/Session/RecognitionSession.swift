@@ -223,7 +223,7 @@ actor RecognitionSession {
         let biasSettings = ASRBiasSettingsStorage.load()
         let needsLLM = !effectiveMode.prompt.isEmpty
         let requestOptions = ASRRequestOptions(
-            enablePunc: !needsLLM,
+            enablePunc: true,
             hotwords: hotwords,
             boostingTableID: biasSettings.boostingTableID,
             bypassProxy: ProxyBypassMode.current.bypassASR
@@ -414,7 +414,7 @@ actor RecognitionSession {
         // Keep speculative LLM task alive — we'll compare its input text
         // against the final ASR transcript after full teardown.
         cancelSpeculativeLLM()
-        let needsLLM = !currentMode.prompt.isEmpty
+        var needsLLM = !currentMode.prompt.isEmpty
         let provider = activeProvider
 
         // ASR teardown: send endAudio and drain event stream with hard deadlines.
@@ -457,8 +457,18 @@ actor RecognitionSession {
             var finalASRText = currentTranscript.composedText
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             finalASRText = SnippetStorage.applyEffective(to: finalASRText)
-            DebugFileLogger.log("stop: needsLLM=true mode=\(currentMode.name) text=\(finalASRText.count)chars specMatch=\(finalASRText == speculativeLLMText)")
-            if !finalASRText.isEmpty {
+
+            // Short text exemption: skip LLM for short texts (语音润色 only)
+            let exemptionThreshold = currentMode.id == ProcessingMode.formalWritingId
+                ? (Int(UserDefaults.standard.string(forKey: "tf_shortTextExemption") ?? "0") ?? 0)
+                : 0
+            if exemptionThreshold > 0 && finalASRText.count < exemptionThreshold {
+                DebugFileLogger.log("stop: short text exemption (\(finalASRText.count) < \(exemptionThreshold) chars), skipping LLM")
+                needsLLM = false
+            }
+
+            DebugFileLogger.log("stop: needsLLM=\(needsLLM) mode=\(currentMode.name) text=\(finalASRText.count)chars specMatch=\(finalASRText == speculativeLLMText)")
+            if needsLLM && !finalASRText.isEmpty {
                 if finalASRText == speculativeLLMText, let specTask = speculativeLLMTask {
                     // Final transcript matches speculative input — reuse (may already be done!)
                     earlyLLMTask = specTask
@@ -541,6 +551,15 @@ actor RecognitionSession {
 
             // Apply snippet replacements before LLM (e.g. "我的邮箱" → actual email)
             finalText = SnippetStorage.applyEffective(to: finalText)
+
+            // Short text exemption (for non-streaming providers, 语音润色 only)
+            if needsLLM && earlyLLMTask == nil && currentMode.id == ProcessingMode.formalWritingId {
+                let exemptionThreshold = Int(UserDefaults.standard.string(forKey: "tf_shortTextExemption") ?? "0") ?? 0
+                if exemptionThreshold > 0 && finalText.count < exemptionThreshold {
+                    DebugFileLogger.log("stop: short text exemption (\(finalText.count) < \(exemptionThreshold) chars), skipping LLM (sync path)")
+                    needsLLM = false
+                }
+            }
 
             // LLM post-processing: prefer early result (fired at stop time),
             // fall back to synchronous call for very short recordings where
@@ -635,6 +654,7 @@ actor RecognitionSession {
             }
 
             finalText = finalText.removingCJKLatinSpaces
+            finalText = finalText.strippingTrailingPunctuation
 
             state = .injecting
             let defaults = UserDefaults.standard
@@ -1109,17 +1129,43 @@ private extension String {
         replacingOccurrences(of: " {2,}", with: " ", options: .regularExpression)
     }
 
-    /// Remove spaces at CJK ↔ Latin/digit boundaries.
-    /// Both ASR engines and LLMs tend to insert spaces between Chinese and
-    /// English text; this strips them while keeping inter-word English spaces.
+    /// Remove unwanted spaces around CJK characters.
+    /// Strips spaces at CJK ↔ Latin/digit boundaries and between CJK characters.
+    /// ASR engines often insert spaces at segment boundaries; LLMs add them
+    /// between Chinese and English text. This cleans both while keeping
+    /// inter-word English spaces intact.
     var removingCJKLatinSpaces: String {
         let cjk = "[\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF]"
         let latin = "[A-Za-z0-9]"
         var s = self
+        // CJK + space + CJK:  "那个 强制" → "那个强制"
+        s = s.replacingOccurrences(of: "(\(cjk)) +(\(cjk))", with: "$1$2", options: .regularExpression)
         // CJK + space + Latin:  "中 E" → "中E"
         s = s.replacingOccurrences(of: "(\(cjk)) (\(latin))", with: "$1$2", options: .regularExpression)
         // Latin + space + CJK:  "E 中" → "E中"
         s = s.replacingOccurrences(of: "(\(latin)) (\(cjk))", with: "$1$2", options: .regularExpression)
+        return s
+    }
+
+    /// Strip trailing punctuation based on user preference (tf_stripTrailingPunctuation).
+    var strippingTrailingPunctuation: String {
+        let mode = UserDefaults.standard.string(forKey: "tf_stripTrailingPunctuation") ?? "off"
+        guard mode != "off", !isEmpty else { return self }
+        var s = self
+        if mode == "period" {
+            // Remove trailing periods: 。.
+            while s.hasSuffix("。") || s.hasSuffix(".") {
+                s.removeLast()
+            }
+        } else if mode == "all" {
+            // Remove trailing punctuation (CJK + ASCII)
+            let cjkPunc = "\u{3002}\u{FF0C}\u{FF01}\u{FF1F}\u{FF1B}\u{FF1A}\u{3001}\u{2026}\u{2014}\u{FF5E}\u{00B7}\u{300C}\u{300D}\u{300E}\u{300F}\u{3010}\u{3011}\u{FF08}\u{FF09}\u{300A}\u{300B}\u{201C}\u{201D}\u{2018}\u{2019}"
+            let trailing = CharacterSet.punctuationCharacters
+                .union(CharacterSet(charactersIn: cjkPunc))
+            while let last = s.unicodeScalars.last, trailing.contains(last) {
+                s.unicodeScalars.removeLast()
+            }
+        }
         return s
     }
 }

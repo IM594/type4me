@@ -50,7 +50,7 @@ enum SoundFeedback {
         ],
         volume: 0.52,
         label: "start",
-        delivery: .afplay
+        delivery: .cachedPlayer
     )
 
     private static let stopSpec = ToneSpec(
@@ -81,7 +81,6 @@ enum SoundFeedback {
             hasWarmedUp = true
             NSLog("[SoundFeedback] warmUp")
             DebugFileLogger.log("sound warmUp")
-            _ = try? soundFileURL(for: startSpec)
             preparePlayersIfNeeded()
             // Pre-cache bundled sounds
             for style in [StartSoundStyle.waterDrop1, .waterDrop2, .keyboard] {
@@ -89,6 +88,9 @@ enum SoundFeedback {
                     _ = try? preparedPlayer(forURL: url, label: style.rawValue)
                 }
             }
+            // Prime audio output hardware with a silent play so the first real
+            // sound doesn't lose its opening milliseconds to device wake-up.
+            primeAudioOutput()
         }
     }
 
@@ -113,18 +115,24 @@ enum SoundFeedback {
 
     /// Crisper, more decisive double tone for recording stop.
     static func playStop() {
-        NSLog("[SoundFeedback] playStop")
-        DebugFileLogger.log("sound playStop invoked")
-
-        // Check if keyboard style is selected - use keyboard-end.wav instead
         let style = StartSoundStyle(
             rawValue: UserDefaults.standard.string(forKey: "tf_startSound") ?? StartSoundStyle.chime.rawValue
         ) ?? .chime
 
-        if style == .keyboard {
-            playBundledEnd(filename: "keyboard-end")
-        } else {
+        NSLog("[SoundFeedback] playStop style=%@", style.rawValue)
+        DebugFileLogger.log("sound playStop style=\(style.rawValue)")
+
+        switch style {
+        case .off:
+            return
+        case .chime:
             play(spec: stopSpec)
+        case .waterDrop1:
+            playBundled(style: .waterDrop1)
+        case .waterDrop2:
+            playBundled(style: .waterDrop2)
+        case .keyboard:
+            playBundledEnd(filename: "keyboard-end")
         }
     }
 
@@ -270,11 +278,31 @@ enum SoundFeedback {
 
     private static func preparePlayersIfNeeded() {
         do {
+            _ = try preparedPlayer(for: startSpec)
             _ = try preparedPlayer(for: stopSpec)
             _ = try preparedPlayer(for: errorSpec)
         } catch {
             DebugFileLogger.log("sound preparePlayersIfNeeded failed: \(String(describing: error))")
         }
+    }
+
+    /// Play a silent burst through an AVAudioPlayer to wake up the audio output
+    /// hardware. Without this, the first real sound can lose its opening
+    /// milliseconds while macOS spins up the output device.
+    private static func primeAudioOutput() {
+        guard let player = cachedPlayers.values.first else { return }
+        let savedVolume = player.volume
+        player.volume = 0
+        player.currentTime = 0
+        _ = player.play()
+        // Let it run just long enough for CoreAudio to fully activate.
+        Thread.sleep(forTimeInterval: 0.05)
+        player.stop()
+        player.volume = savedVolume
+        player.currentTime = 0
+        player.prepareToPlay()
+        NSLog("[SoundFeedback] audio output primed")
+        DebugFileLogger.log("sound audio output primed")
     }
 
     private static func preparedPlayer(for spec: ToneSpec) throws -> AVAudioPlayer {

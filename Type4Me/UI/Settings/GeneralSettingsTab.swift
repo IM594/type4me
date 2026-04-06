@@ -16,10 +16,10 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
     @AppStorage("tf_volumeReduction") private var volumeReduction = -1
     @AppStorage("tf_visualStyle") private var visualStyle = "timeline"
     @AppStorage("tf_language") private var language = AppLanguage.systemDefault
-    @AppStorage("tf_escAbortEnabled") private var escAbortEnabled = true
     @AppStorage("tf_preserveClipboard") private var preserveClipboard = true
     @AppStorage("tf_showDockIcon") private var showDockIcon = true
     @AppStorage("tf_bypassProxy") private var bypassProxy = "off"
+    @AppStorage("tf_stripTrailingPunctuation") private var stripTrailingPunctuation = "off"
 
     @State private var hasMic = false
     @State private var hasAccessibility = false
@@ -40,7 +40,7 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
             // CARD 1: 录音行为
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-            settingsGroupCard(L("录音行为", "Recording Behavior"), icon: "waveform") {
+            settingsGroupCard(L("语音识别行为", "Speech Recognition"), icon: "waveform") {
                 // Row 1: 提示音 / 录音动效
                 HStack(alignment: .top, spacing: 16) {
                     startSoundRow
@@ -51,13 +51,14 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
 
                 SettingsDivider()
 
-                // Row 2: 降低音量 / ESC打断
+                // Row 2: 降低音量 / 去句末标点
                 HStack(alignment: .top, spacing: 16) {
                     volumeReductionRow
                         .frame(maxWidth: .infinity)
-                    escAbortRow
+                    stripPunctuationRow
                         .frame(maxWidth: .infinity)
                 }
+
             }
 
             Spacer().frame(height: 16)
@@ -314,20 +315,18 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
         .padding(.vertical, 6)
     }
 
-    private var escAbortRow: some View {
+    private var stripPunctuationRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L("ESC 打断录音", "ESC to Abort").uppercased())
+            Text(L("去句末标点", "Strip Trailing Punctuation").uppercased())
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(TF.settingsTextTertiary)
             settingsDropdown(
-                selection: Binding(
-                    get: { escAbortEnabled ? "on" : "off" },
-                    set: { escAbortEnabled = $0 == "on" }
-                ),
+                selection: $stripTrailingPunctuation,
                 options: [
-                    ("on", L("开启", "On")),
-                    ("off", L("关闭", "Off")),
+                    ("off", L("不去掉", "Off")),
+                    ("period", L("去掉句号", "Periods Only")),
+                    ("all", L("去掉所有标点", "All Punctuation")),
                 ]
             )
         }

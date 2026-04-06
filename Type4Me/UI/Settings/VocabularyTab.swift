@@ -8,7 +8,7 @@ struct VocabularyTab: View {
     @State private var showBulkHotwordsSheet = false
     @State private var bulkHotwordsText = ""
 
-    // Snippets (user file)
+    // Snippets (user file + built-in)
     @State private var snippets: [(trigger: String, value: String)] = SnippetStorage.load()
     @State private var editingGroupReplacement: String? = nil
     @State private var editReplacementText: String = ""
@@ -17,6 +17,10 @@ struct VocabularyTab: View {
     @State private var newValue: String = ""
     @State private var showBulkSnippetsSheet = false
     @State private var bulkSnippetsText = ""
+
+    // Built-in example snippet
+    private static let builtinExampleReplacement = "Type4Me"
+    private static let builtinExampleTriggers = ["typeform me", "typefrom me", "type for me", "typeform"]
 
     // Sort
     @State private var hotwordSort: VocabSort = .byTime
@@ -59,9 +63,8 @@ struct VocabularyTab: View {
                 TextField(L("添加热词...", "Add hotword..."), text: $newHotword)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
-                    .frame(width: 100)
+                    .frame(width: 100, height: 28)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(TF.settingsTextTertiary.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4]))
@@ -89,37 +92,12 @@ struct VocabularyTab: View {
             }
             .padding(.bottom, 4)
 
-            HStack(spacing: 0) {
-                Text(L("说到触发词时自动替换为对应内容。搭配 ", "Trigger words are auto-replaced with mapped content. Use with "))
-                    .foregroundStyle(TF.settingsTextTertiary)
-                Button {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/joewongjc/type4me-vocab-skill")!)
-                } label: {
-                    HStack(spacing: 2) {
-                        Text(L("官方 Skill", "official Skill"))
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 8))
-                    }
-                    .foregroundStyle(TF.settingsAccentBlue)
-                }
-                .buttonStyle(.plain)
-                Text(L(" 可快捷管理。", " for easy management."))
-                    .foregroundStyle(TF.settingsTextTertiary)
-            }
-            .font(.system(size: 11))
-            .padding(.bottom, 12)
+            Text(L("说到触发词时自动替换为对应内容。搭配官方 Skill 可快捷管理。", "Trigger words are auto-replaced with mapped content. Use with official Skill for easy management."))
+                .font(.system(size: 11))
+                .foregroundStyle(TF.settingsTextTertiary)
+                .padding(.bottom, 12)
 
-            // Existing user snippets (grouped by replacement)
-            ForEach(Array(displaySnippets.enumerated()), id: \.element.id) { index, group in
-                if index > 0 {
-                    SettingsDivider()
-                }
-                snippetGroupView(group: group)
-            }
-
-            SettingsDivider()
-
-            // Add new row
+            // Add new row (top)
             HStack(spacing: 8) {
                 TextField(L("替换内容", "Replacement"), text: $newValue)
                     .textFieldStyle(.plain)
@@ -158,18 +136,21 @@ struct VocabularyTab: View {
                 .buttonStyle(.plain)
                 .disabled(newTrigger.isEmpty || newValue.isEmpty)
             }
-            .padding(.top, 8)
+            .padding(.vertical, 4)
 
-            Text(L("示例: \"hello@example.com\" ← \"我的邮箱\"", "Example: \"hello@example.com\" ← \"my email\""))
-                .font(.system(size: 10))
-                .foregroundStyle(TF.settingsTextTertiary)
-                .padding(.top, 6)
+            // User snippets
+            ForEach(Array(displaySnippets.enumerated()), id: \.element.id) { index, group in
+                SettingsDivider()
+                snippetGroupView(group: group)
+            }
+
 
             Spacer()
         }
         .onAppear {
             hotwords = HotwordStorage.load()
             snippets = SnippetStorage.load()
+            seedExampleIfNeeded()
         }
         .sheet(isPresented: $showBulkHotwordsSheet) {
             bulkHotwordsSheet
@@ -236,7 +217,7 @@ struct VocabularyTab: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 6).fill(TF.settingsBg)
         )
@@ -311,6 +292,14 @@ struct VocabularyTab: View {
                 }
                 .buttonStyle(.plain)
             } else {
+                if group.replacement == Self.builtinExampleReplacement {
+                    Text(L("示例", "Example"))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(TF.settingsTextTertiary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(TF.settingsCardAlt))
+                }
                 Text(group.replacement)
                     .font(.system(size: 12))
                     .foregroundStyle(TF.settingsText)
@@ -321,17 +310,16 @@ struct VocabularyTab: View {
                 .foregroundStyle(TF.settingsTextTertiary)
 
             // Trigger tags (right side)
-            WrappingHStack(spacing: 4) {
+            WrappingHStack(spacing: 6) {
                 ForEach(group.triggers, id: \.self) { trigger in
                     triggerTag(trigger: trigger, replacement: group.replacement)
                 }
 
                 TextField(L("添加...", "Add..."), text: newTriggerBinding(for: group.replacement))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 11))
-                    .frame(width: 60)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .font(.system(size: 12))
+                    .frame(width: 60, height: 28)
+                    .padding(.horizontal, 8)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(TF.settingsTextTertiary.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4]))
@@ -363,22 +351,36 @@ struct VocabularyTab: View {
     private func triggerTag(trigger: String, replacement: String) -> some View {
         HStack(spacing: 4) {
             Text(trigger)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(TF.settingsTextSecondary)
             Button {
                 removeTrigger(trigger: trigger, replacement: replacement)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(TF.settingsTextTertiary)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 6).fill(TF.settingsBg)
         )
+    }
+
+    // MARK: - Example Seeding
+
+    private static let seededKey = "tf_snippetExampleSeeded"
+
+    private func seedExampleIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Self.seededKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.seededKey)
+        guard snippets.isEmpty else { return }
+        for trigger in Self.builtinExampleTriggers {
+            snippets.append((trigger: trigger, value: Self.builtinExampleReplacement))
+        }
+        SnippetStorage.save(snippets)
     }
 
     // MARK: - Group Actions
@@ -669,3 +671,4 @@ struct VocabularyTab: View {
     }
 
 }
+

@@ -58,7 +58,7 @@ enum SonioxProtocol {
             "sample_rate": 16000,
             "num_channels": 1,
             "enable_endpoint_detection": true,
-            "max_endpoint_delay_ms": 3000,
+            "max_endpoint_delay_ms": 10000,
             "language_hints": ["zh", "en"],
             "language_hints_strict": true,
         ]
