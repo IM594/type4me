@@ -99,6 +99,7 @@ actor RecognitionSession {
     private var audioChunkContinuation: AsyncStream<Data>.Continuation?
     private var audioChunkSenderTask: Task<Void, Never>?
     private var uploadFailureFlag: UploadFailureFlag?
+    private var lastStreamingError: Error?
 
     // MARK: - Prompt context (selected text + clipboard captured at recording start)
 
@@ -147,6 +148,7 @@ actor RecognitionSession {
         hasEmittedReadyForCurrentSession = false
         injectionAborted = false
         pendingLLMError = nil
+        lastStreamingError = nil
         state = .starting
 
         // Load credentials for selected provider
@@ -496,7 +498,11 @@ actor RecognitionSession {
 
         // Batch fallback: if streaming broke mid-session, always retry with
         // the full local recording to get complete text, even if we have partial.
-        let streamingFailed = uploadFailureFlag?.failed == true || !asrTeardownClean
+        let streamingFailed = Self.shouldAttemptBatchFallback(
+            uploadFailed: uploadFailureFlag?.failed == true,
+            asrTeardownClean: asrTeardownClean,
+            streamingError: lastStreamingError
+        )
         if streamingFailed {
             let partialText = currentTranscript.composedText
             DebugFileLogger.log("stop: streaming failed (partial=\(partialText.count) chars), attempting batch fallback")
@@ -517,6 +523,7 @@ actor RecognitionSession {
             }
         }
         uploadFailureFlag = nil
+        lastStreamingError = nil
 
         // Combine confirmed segments + any trailing unconfirmed partial.
         let effectiveText = currentTranscript.displayText
@@ -691,6 +698,7 @@ actor RecognitionSession {
             }
 
         case .error(let error):
+            lastStreamingError = error
             logger.error("ASR error: \(error)")
 
         case .completed:
@@ -883,6 +891,14 @@ actor RecognitionSession {
         }
     }
 
+    static func shouldAttemptBatchFallback(
+        uploadFailed: Bool,
+        asrTeardownClean: Bool,
+        streamingError: Error?
+    ) -> Bool {
+        uploadFailed || !asrTeardownClean || streamingError != nil
+    }
+
     // MARK: - Batch Fallback
 
     /// Try to transcribe full audio via the same provider in a fresh connection.
@@ -973,6 +989,8 @@ actor RecognitionSession {
         currentTranscript = .empty
         hasEmittedReadyForCurrentSession = false
         currentConfig = nil
+        uploadFailureFlag = nil
+        lastStreamingError = nil
         SystemVolumeManager.restore()
     }
 
